@@ -1,4 +1,4 @@
-module github.com/markup-carve/go-carve
+module github.com/markup-carve/carve-go
 
 go 1.25.0
 

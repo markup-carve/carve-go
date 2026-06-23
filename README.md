@@ -16,7 +16,7 @@ integration.
 ## Install
 
 ```bash
-go get github.com/markup-carve/go-carve
+go get github.com/markup-carve/carve-go
 ```
 
 ## Usage
@@ -27,7 +27,7 @@ package main
 import (
 	"fmt"
 
-	carve "github.com/markup-carve/go-carve"
+	carve "github.com/markup-carve/carve-go"
 )
 
 func main() {
