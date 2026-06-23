@@ -1,0 +1,12 @@
+# Go
+*.test
+*.out
+/coverage.*
+
+# Editor / OS
+.DS_Store
+*.swp
+
+# NOTE: internal/wasm/carve.wasm is intentionally NOT ignored.
+# The embedded .wasm is the shipped artifact and must be committed.
+# Regenerate it with ./build-wasm.sh.
