@@ -124,6 +124,10 @@ func nativeCarveBin(t *testing.T) string {
 		return env
 	}
 	candidates := []string{
+		// Static-capable checkout (proto/div-label-fallback, the engine the
+		// committed wasm is built from) is preferred so the static byte-check
+		// can run; fall back to a plain main checkout for the interactive check.
+		"/tmp/carve-rs-static/target/release/carve",
 		"/media/mark/data/work/git/carve-rs/target/release/carve",
 	}
 	for _, c := range candidates {
@@ -172,4 +176,218 @@ func TestToHTML_ByteIdenticalToNative(t *testing.T) {
 
 func normTrailingNL(s string) string {
 	return strings.TrimRight(s, "\n") + "\n"
+}
+
+// --- static render mode ------------------------------------------------------
+
+const detailsSrc = "::: details \"More info\"\nHidden body.\n:::\n"
+
+// TestToHTMLStatic_DetailsOpen asserts the headline static behavior: a details
+// block that is a collapsed <details> interactively becomes <details open> in
+// static mode so the body is visible without a client.
+func TestToHTMLStatic_DetailsOpen(t *testing.T) {
+	// Interactive (with extensions so the <details> element is produced).
+	interactive, err := ToHTMLOptions(detailsSrc, Options{Extensions: []string{"all"}})
+	if err != nil {
+		t.Fatalf("interactive error: %v", err)
+	}
+	if !strings.Contains(interactive, "<details>") {
+		t.Fatalf("interactive: expected collapsed <details>, got %q", interactive)
+	}
+	if strings.Contains(interactive, "<details open>") {
+		t.Fatalf("interactive: must NOT be open, got %q", interactive)
+	}
+
+	// Static: forced open.
+	static, err := ToHTMLStatic(detailsSrc)
+	if err != nil {
+		t.Fatalf("static error: %v", err)
+	}
+	if !strings.Contains(static, "<details open>") {
+		t.Fatalf("static: expected <details open>, got %q", static)
+	}
+	if !strings.Contains(static, "<summary>More info</summary>") {
+		t.Fatalf("static: expected summary, got %q", static)
+	}
+}
+
+// TestToHTMLStatic_SpoilerRevealed asserts an inline spoiler, which hides its
+// content interactively, is revealed in static mode (the spoiler-revealed
+// class is added). This stands in for the tabs/code-group "flatten" behavior:
+// carve-rs has no Tabs/CodeGroup extension (those are carve-js / carve-php
+// only), so spoiler reveal is the representative interactive-flatten case the
+// embedded engine actually ships.
+func TestToHTMLStatic_SpoilerRevealed(t *testing.T) {
+	src := "Plot: :spoiler[the butler did it].\n"
+
+	interactive, err := ToHTMLOptions(src, Options{Extensions: []string{"all"}})
+	if err != nil {
+		t.Fatalf("interactive error: %v", err)
+	}
+	if !strings.Contains(interactive, `<span class="spoiler">`) {
+		t.Fatalf("interactive: expected hidden spoiler span, got %q", interactive)
+	}
+
+	static, err := ToHTMLStatic(src)
+	if err != nil {
+		t.Fatalf("static error: %v", err)
+	}
+	if !strings.Contains(static, `<span class="spoiler spoiler-revealed">`) {
+		t.Fatalf("static: expected revealed spoiler span, got %q", static)
+	}
+}
+
+// TestToHTMLStatic_MermaidSource asserts a mermaid fence degrades to its source
+// as a <pre><code> block in static mode (no build-time image renderer is
+// available across the WASI boundary).
+func TestToHTMLStatic_MermaidSource(t *testing.T) {
+	src := "``` mermaid\ngraph TD; A --> B\n```\n"
+
+	static, err := ToHTMLStatic(src)
+	if err != nil {
+		t.Fatalf("static error: %v", err)
+	}
+	if !strings.Contains(static, "<pre") {
+		t.Fatalf("static: expected <pre source fallback, got %q", static)
+	}
+	if !strings.Contains(static, `<code class="language-mermaid">`) {
+		t.Fatalf("static: expected language-mermaid code, got %q", static)
+	}
+	// Source fallback must not emit any injected SVG/image (no renderer path).
+	if strings.Contains(static, "<svg") || strings.Contains(static, "<img") {
+		t.Fatalf("static: must degrade to source, not an image, got %q", static)
+	}
+}
+
+// TestToHTMLStatic_DiffersFromInteractive sanity-checks that the two entry
+// points actually diverge on the same input.
+func TestToHTMLStatic_DiffersFromInteractive(t *testing.T) {
+	interactive, err := ToHTMLOptions(detailsSrc, Options{Extensions: []string{"all"}})
+	if err != nil {
+		t.Fatalf("interactive error: %v", err)
+	}
+	static, err := ToHTMLStatic(detailsSrc)
+	if err != nil {
+		t.Fatalf("static error: %v", err)
+	}
+	if interactive == static {
+		t.Fatalf("expected static and interactive output to differ, both = %q", static)
+	}
+}
+
+// TestToHTMLOptions_StaticImpliesExtensions asserts that Options{Static: true}
+// alone (no Extensions populated) still flattens an extension-backed construct,
+// i.e. Static implies --extensions.
+func TestToHTMLOptions_StaticImpliesExtensions(t *testing.T) {
+	out, err := ToHTMLOptions(detailsSrc, Options{Static: true})
+	if err != nil {
+		t.Fatalf("ToHTMLOptions error: %v", err)
+	}
+	if !strings.Contains(out, "<details open>") {
+		t.Fatalf("Static without Extensions must still flatten details, got %q", out)
+	}
+	// And it matches the convenience entry point.
+	viaStatic, err := ToHTMLStatic(detailsSrc)
+	if err != nil {
+		t.Fatalf("ToHTMLStatic error: %v", err)
+	}
+	if out != viaStatic {
+		t.Fatalf("Options{Static:true} must equal ToHTMLStatic: %q vs %q", out, viaStatic)
+	}
+}
+
+// TestToHTML_DefaultUnchanged guards the non-breaking contract: the plain
+// ToHTML path (interactive, no extensions) is unaffected by the new options.
+func TestToHTML_DefaultUnchanged(t *testing.T) {
+	out, err := ToHTML("# Hi")
+	if err != nil {
+		t.Fatalf("ToHTML error: %v", err)
+	}
+	viaOpts, err := ToHTMLOptions("# Hi", Options{})
+	if err != nil {
+		t.Fatalf("ToHTMLOptions error: %v", err)
+	}
+	if out != viaOpts {
+		t.Fatalf("zero Options must equal ToHTML: %q vs %q", viaOpts, out)
+	}
+}
+
+// TestToHTMLStatic_Concurrent asserts the static path is concurrency-safe.
+func TestToHTMLStatic_Concurrent(t *testing.T) {
+	const goroutines = 16
+	const iterations = 8
+	var wg sync.WaitGroup
+	errs := make(chan error, goroutines*iterations)
+	for g := 0; g < goroutines; g++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < iterations; i++ {
+				out, err := ToHTMLStatic(detailsSrc)
+				if err != nil {
+					errs <- err
+					return
+				}
+				if !strings.Contains(out, "<details open>") {
+					errs <- &mismatchError{out}
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatalf("concurrent ToHTMLStatic failure: %v", err)
+	}
+}
+
+// runNativeStatic runs the native CLI with --html --static --extensions.
+func runNativeStatic(t *testing.T, bin, source string) string {
+	t.Helper()
+	cmd := exec.Command(bin, "--html", "--static", "--extensions")
+	cmd.Stdin = strings.NewReader(source)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("native carve --static failed: %v", err)
+	}
+	return string(out)
+}
+
+// TestToHTMLStatic_ByteIdenticalToNative asserts the Go static output equals
+// the carve-rs CLI run with --html --static --extensions on the same input.
+// It auto-skips unless a static-capable native binary is found (the binary
+// must advertise --static).
+func TestToHTMLStatic_ByteIdenticalToNative(t *testing.T) {
+	bin := nativeCarveBin(t)
+	if !binSupportsStatic(t, bin) {
+		t.Skipf("native carve at %s does not support --static; set CARVE_BIN to a static-capable build", bin)
+	}
+	samples := []string{
+		detailsSrc,
+		"Plot: :spoiler[the butler did it].\n",
+		"``` mermaid\ngraph TD; A --> B\n```\n",
+		"::: spoiler \"Ending\"\nEveryone lives.\n:::\n",
+	}
+	for i, s := range samples {
+		want := runNativeStatic(t, bin, s)
+		got, err := ToHTMLStatic(s)
+		if err != nil {
+			t.Fatalf("sample %d: ToHTMLStatic error: %v", i, err)
+		}
+		if normTrailingNL(got) != normTrailingNL(want) {
+			t.Fatalf("sample %d static byte mismatch:\n--- go ---\n%q\n--- native ---\n%q", i, got, want)
+		}
+	}
+}
+
+// binSupportsStatic reports whether the native binary advertises --static.
+func binSupportsStatic(t *testing.T, bin string) bool {
+	t.Helper()
+	out, err := exec.Command(bin, "--help").CombinedOutput()
+	if err != nil {
+		// Some CLIs exit non-zero on --help; still inspect the output.
+		return strings.Contains(string(out), "--static")
+	}
+	return strings.Contains(string(out), "--static")
 }
