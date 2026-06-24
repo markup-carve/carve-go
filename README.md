@@ -139,9 +139,9 @@ module needs:
 - appends a single trailing newline if the output lacks one,
 - accepts `--static` and `--extensions` for the static render mode above.
 
-The committed `.wasm` is built from carve-rs branch `proto/div-label-fallback`
-(PR #143, static render mode), commit
-`1786a3716469e28bf3e19c64f15222e6fe79f623`.
+The committed `.wasm` is built from carve-rs branch `main` (static render mode
+merged via PR #143), commit
+`f7b3658746f4f0d1a58cd1ce3fa22a153b07cbfd`.
 
 Because the existing CLI already does stdin to HTML stdout, **no wrapper crate
 is needed**. Regenerate the artifact with:

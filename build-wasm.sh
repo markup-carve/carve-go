@@ -15,16 +15,16 @@
 # is needed; we compile the `carve` bin directly to wasm32-wasip1.
 #
 # Pinned carve-rs revision used to generate the committed .wasm:
-#   branch proto/div-label-fallback (PR #143, static render mode)
-#   commit 1786a3716469e28bf3e19c64f15222e6fe79f623
+#   branch main (static render mode merged via PR #143)
+#   commit f7b3658746f4f0d1a58cd1ce3fa22a153b07cbfd
 #
 # Usage:
 #   CARVE_RS=/path/to/carve-rs ./build-wasm.sh
 #
 # CARVE_RS defaults to the sibling checkout used during development. For a
 # reproducible build, clone the pinned revision and point CARVE_RS at it:
-#   git clone -b proto/div-label-fallback \
-#     https://github.com/markup-carve/carve-rs /tmp/carve-rs-static
+#   git clone https://github.com/markup-carve/carve-rs /tmp/carve-rs-static
+#   git -C /tmp/carve-rs-static checkout f7b3658746f4f0d1a58cd1ce3fa22a153b07cbfd
 #   CARVE_RS=/tmp/carve-rs-static ./build-wasm.sh
 set -euo pipefail
 
