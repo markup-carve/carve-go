@@ -7,14 +7,25 @@
 #   - reads Carve source from stdin when no file argument is given
 #   - writes rendered HTML to stdout (the default --html format)
 #   - appends a single trailing newline if the output lacks one
+#   - accepts --static (self-contained HTML: flatten interactive constructs,
+#     degrade diagrams/math to source) and --extensions (enable the bundled
+#     interactive extensions so --static has something to flatten/degrade)
 #
 # Because the existing CLI already does stdin -> HTML stdout, no wrapper crate
 # is needed; we compile the `carve` bin directly to wasm32-wasip1.
 #
+# Pinned carve-rs revision used to generate the committed .wasm:
+#   branch proto/div-label-fallback (PR #143, static render mode)
+#   commit 1786a3716469e28bf3e19c64f15222e6fe79f623
+#
 # Usage:
 #   CARVE_RS=/path/to/carve-rs ./build-wasm.sh
 #
-# CARVE_RS defaults to the sibling checkout used during development.
+# CARVE_RS defaults to the sibling checkout used during development. For a
+# reproducible build, clone the pinned revision and point CARVE_RS at it:
+#   git clone -b proto/div-label-fallback \
+#     https://github.com/markup-carve/carve-rs /tmp/carve-rs-static
+#   CARVE_RS=/tmp/carve-rs-static ./build-wasm.sh
 set -euo pipefail
 
 CARVE_RS="${CARVE_RS:-/media/mark/data/work/git/carve-rs}"

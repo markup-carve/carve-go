@@ -42,19 +42,80 @@ func main() {
 ### API
 
 ```go
-// ToHTML renders Carve source to HTML using the embedded engine.
+// ToHTML renders Carve source to HTML (interactive default).
 // Safe to call concurrently from multiple goroutines.
 func ToHTML(source string) (string, error)
 
 // ToHTMLContext is ToHTML with a caller-supplied context that bounds
 // wasm compilation (first call) and per-call execution.
 func ToHTMLContext(ctx context.Context, source string) (string, error)
+
+// ToHTMLStatic renders self-contained static HTML: it flattens interactive
+// constructs and degrades diagrams/math to source (see "Static render mode").
+func ToHTMLStatic(source string) (string, error)
+
+// ToHTMLOptions renders with explicit options. The zero Options value equals
+// ToHTML (interactive, no extensions).
+func ToHTMLOptions(source string, opts Options) (string, error)
+func ToHTMLOptionsContext(ctx context.Context, source string, opts Options) (string, error)
+
+// Options configures a render call. The zero value is the interactive default.
+type Options struct {
+	Static     bool     // self-contained static HTML (CLI --static; implies --extensions)
+	Extensions []string // enable bundled interactive extensions (CLI --extensions)
+}
 ```
 
 Carve inline conventions (note these differ from Markdown):
 
 - `*x*` renders as `<strong>x</strong>` (bold)
 - `/x/` renders as `<em>x</em>` (italic)
+
+## Static render mode
+
+`ToHTMLStatic` (or `ToHTMLOptions` with `Options{Static: true}`) produces
+self-contained HTML that is safe to publish without a JavaScript client. It
+maps to the engine CLI flags `--html --static --extensions` (`Static` implies
+`--extensions`, since that is what produces the constructs to flatten) and:
+
+- flattens interactive constructs - a collapsed `<details>` becomes
+  `<details open>`, and spoilers are revealed
+  (`<span class="spoiler spoiler-revealed">`);
+- degrades diagram and math fences (mermaid, chart, graphviz, math) to their
+  **source** as a `<pre><code class="language-...">` block.
+
+```go
+html, err := carve.ToHTMLStatic("::: details \"More\"\nBody.\n:::")
+// -> <details open>...</details>
+```
+
+### Limitation: no build-time image renderers (partial rollout)
+
+> [!IMPORTANT]
+> carve-go static mode is **flatten + source fallback only**. Build-time
+> renderer injection (turning a mermaid/math fence into a rendered image or
+> server-side MathML) is **not supported** in carve-go.
+
+The sibling in-process engines (carve-js, carve-php, carve-py, carve-rb)
+accept host closures that the static renderer calls to inject `<svg>` / `<img>`
+/ MathML at build time. carve-go embeds the engine as a `wasm32-wasip1` CLI and
+drives it over the WASI stdio boundary, so there is no way to pass a Go closure
+into the engine. Diagrams and math therefore always degrade to their source in
+carve-go.
+
+If you need rendered images, pre-render the diagrams yourself, or use one of
+the in-process engines for the static build step.
+
+This is the intentional partial entry in the graceful-degradation set
+(spec carve #205; siblings carve-js #242, carve-php #240, carve-rs #143,
+carve-py #1, carve-rb #1).
+
+> [!NOTE]
+> carve-rs - the embedded engine - ships Details, Spoiler, FencedRender
+> (mermaid / chart / graphviz) and MathBlock, but **not** a Tabs / CodeGroup
+> extension (those are carve-js / carve-php only). So tab/code-group flattening
+> is not part of carve-go's static behavior; spoiler reveal and `details`
+> opening are the interactive-flatten cases this engine actually covers.
 
 ## How it works
 
@@ -75,7 +136,12 @@ module needs:
 
 - reads Carve source from **stdin** when no file argument is given,
 - writes rendered **HTML to stdout** (the default `--html` format),
-- appends a single trailing newline if the output lacks one.
+- appends a single trailing newline if the output lacks one,
+- accepts `--static` and `--extensions` for the static render mode above.
+
+The committed `.wasm` is built from carve-rs branch `proto/div-label-fallback`
+(PR #143, static render mode), commit
+`1786a3716469e28bf3e19c64f15222e6fe79f623`.
 
 Because the existing CLI already does stdin to HTML stdout, **no wrapper crate
 is needed**. Regenerate the artifact with:
@@ -124,8 +190,16 @@ The test suite asserts headings, Carve bold (`*x*`), Carve emphasis (`/x/`),
 lists, links, and tables; that empty input does not panic; that concurrent calls
 are safe (under `-race`); and that `ToHTML` output is byte-identical to the
 native carve-rs CLI on several samples (normalizing a single trailing newline).
-The byte-identical test auto-skips if the native `carve` binary is not found;
-set `CARVE_BIN=/path/to/carve` to point it explicitly.
+
+For static mode it asserts `<details open>` (vs interactive `<details>`),
+spoiler reveal, mermaid degrading to a `<pre><code>` source block, that static
+and interactive output differ, that the zero `Options` value is unchanged from
+`ToHTML`, concurrency safety, and that `ToHTMLStatic` is byte-identical to the
+native CLI run with `--html --static --extensions`.
+
+The byte-identical tests auto-skip if the native `carve` binary is not found
+(the static one also skips unless the binary advertises `--static`); set
+`CARVE_BIN=/path/to/carve` to point it explicitly.
 
 ## License
 
