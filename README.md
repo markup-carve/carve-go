@@ -47,7 +47,8 @@ func main() {
 func ToHTML(source string) (string, error)
 
 // ToHTMLContext is ToHTML with a caller-supplied context that bounds
-// wasm compilation (first call) and per-call execution.
+// per-call execution (a deadline/cancellation interrupts the render). The
+// one-time wasm compilation runs under a background context.
 func ToHTMLContext(ctx context.Context, source string) (string, error)
 
 // ToHTMLStatic renders self-contained static HTML: it flattens interactive
@@ -70,6 +71,42 @@ Carve inline conventions (note these differ from Markdown):
 
 - `*x*` renders as `<strong>x</strong>` (bold)
 - `/x/` renders as `<em>x</em>` (italic)
+
+## Resource limits and untrusted input
+
+The embedded engine runs in the wazero wasm runtime, which is hardened so a
+single call cannot run away with host CPU or memory:
+
+- **Per-call cancellation.** The runtime is built with
+  `WithCloseOnContextDone`, so the `context.Context` you pass to
+  `ToHTMLContext` / `ToHTMLOptionsContext` genuinely interrupts CPU-bound parse
+  loops. An expired deadline or canceled context returns promptly with an error
+  that satisfies `errors.Is(err, context.DeadlineExceeded)` /
+  `context.Canceled`, instead of letting the input run to completion.
+
+  > [!IMPORTANT]
+  > For **untrusted input**, always use `ToHTMLContext` (or
+  > `ToHTMLOptionsContext`) with a deadline. The plain `ToHTML` /
+  > `ToHTMLStatic` / `ToHTMLOptions` helpers use `context.Background()` and are
+  > therefore **unbounded** in time. Some pathological inputs are processed in
+  > super-linear time by the engine, so without a deadline a single small
+  > adversarial document can occupy a goroutine for many seconds.
+
+  ```go
+  ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+  defer cancel()
+  html, err := carve.ToHTMLContext(ctx, untrusted)
+  if errors.Is(err, context.DeadlineExceeded) {
+      // input exceeded the render budget; reject it
+  }
+  ```
+
+- **Memory cap.** Each instance's linear memory is capped at 512 MiB (8192
+  wasm pages) via `WithMemoryLimitPages`, well under wazero's 4 GiB default
+  ceiling. This is comfortably more than any reasonable Carve document needs,
+  while preventing one input (or one per concurrent call) from exhausting host
+  memory. An allocation past the cap fails gracefully inside the guest and is
+  reported as a non-zero engine exit, rather than OOM-killing the host process.
 
 ## Static render mode
 
