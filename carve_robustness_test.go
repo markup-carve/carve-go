@@ -105,18 +105,25 @@ func TestToHTML_NoDeadlineStillCompletes(t *testing.T) {
 }
 
 // TestToHTMLContext_CancellationDoesNotPoisonRuntime guards the compile-once,
-// shared-runtime model: a canceled or deadline-exceeded call closes only that
-// call's fresh module instance, not the shared runtime. A subsequent call on a
-// healthy context must still succeed. (wazero builds the runtime once via
-// engineOnce; per-call cancellation must not leave it unusable.)
+// shared-runtime model against a subtle hazard: the one-time engine build is
+// guarded by sync.Once, and wazero's compiler honors ctx.Err() during
+// compilation. If that build ran under a caller's context, a first call with an
+// already-canceled context could abort compilation and cache the error
+// permanently, poisoning the engine for every later caller. loadEngine builds
+// under a background context to prevent that.
+//
+// This test deliberately does NOT warm the engine first, so when run in
+// isolation (e.g. -run TestToHTMLContext_CancellationDoesNotPoisonRuntime) the
+// canceled call is the one that triggers initialization. A subsequent call on a
+// healthy context must still succeed.
 func TestToHTMLContext_CancellationDoesNotPoisonRuntime(t *testing.T) {
-	// Canceled context first.
+	// Canceled context first (possibly the very first call into the package).
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if _, err := ToHTMLContext(ctx, quadraticInput()); err == nil {
 		t.Fatalf("expected canceled context to error")
 	}
-	// Healthy call must still work afterward.
+	// Healthy call must still work afterward: the shared engine is not poisoned.
 	out, err := ToHTML("# ok")
 	if err != nil {
 		t.Fatalf("runtime poisoned after canceled call: %v", err)

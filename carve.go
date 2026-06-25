@@ -52,8 +52,19 @@ var (
 	engineOnce sync.Once
 )
 
-func loadEngine(ctx context.Context) (*compiledEngine, error) {
+func loadEngine() (*compiledEngine, error) {
 	engineOnce.Do(func() {
+		// The one-time runtime build and wasm compilation use a fresh
+		// background context, NOT a caller's per-call context. Because this is
+		// guarded by sync.Once, a caller passing an already-canceled or
+		// short-deadline context must not be able to abort compilation and
+		// cache that error permanently, which would poison the shared engine
+		// for every later caller. wazero's compiler honors ctx.Err() during
+		// compilation, so binding the build to a call context would expose
+		// exactly that hazard. Per-call cancellation is enforced separately at
+		// InstantiateModule time using the caller's context.
+		ctx := context.Background()
+
 		// WithCloseOnContextDone(true) is what makes a caller's context
 		// deadline/cancellation actually interrupt CPU-bound guest code:
 		// without it, wazero never checks the context once a wasm function is
@@ -136,10 +147,11 @@ func ToHTML(source string) (string, error) {
 }
 
 // ToHTMLContext is ToHTML with a caller-supplied context. The context bounds
-// both wasm compilation (first call) and the per-call module execution: a
-// deadline or cancellation interrupts CPU-bound parsing inside the engine and
-// returns an error satisfying errors.Is(err, context.DeadlineExceeded) /
-// context.Canceled. Use this with a deadline for untrusted input.
+// the per-call module execution: a deadline or cancellation interrupts
+// CPU-bound parsing inside the engine and returns an error satisfying
+// errors.Is(err, context.DeadlineExceeded) / context.Canceled. Use this with a
+// deadline for untrusted input. (The one-time wasm compilation runs under a
+// background context, so a single caller cannot poison the shared engine.)
 func ToHTMLContext(ctx context.Context, source string) (string, error) {
 	return ToHTMLOptionsContext(ctx, source, Options{})
 }
@@ -173,9 +185,12 @@ func ToHTMLOptions(source string, opts Options) (string, error) {
 }
 
 // ToHTMLOptionsContext is ToHTMLOptions with a caller-supplied context that
-// bounds wasm compilation (first call) and the per-call module execution.
+// bounds the per-call module execution (a deadline/cancellation interrupts the
+// running render). The one-time wasm compilation runs under a background
+// context, so a single caller's canceled context cannot poison the shared
+// engine for later callers.
 func ToHTMLOptionsContext(ctx context.Context, source string, opts Options) (string, error) {
-	eng, err := loadEngine(ctx)
+	eng, err := loadEngine()
 	if err != nil {
 		return "", err
 	}

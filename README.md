@@ -47,7 +47,8 @@ func main() {
 func ToHTML(source string) (string, error)
 
 // ToHTMLContext is ToHTML with a caller-supplied context that bounds
-// wasm compilation (first call) and per-call execution.
+// per-call execution (a deadline/cancellation interrupts the render). The
+// one-time wasm compilation runs under a background context.
 func ToHTMLContext(ctx context.Context, source string) (string, error)
 
 // ToHTMLStatic renders self-contained static HTML: it flattens interactive
