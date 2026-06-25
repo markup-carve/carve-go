@@ -71,6 +71,35 @@ Carve inline conventions (note these differ from Markdown):
 - `*x*` renders as `<strong>x</strong>` (bold)
 - `/x/` renders as `<em>x</em>` (italic)
 
+## Resource limits and untrusted input
+
+The embedded engine runs in the wazero wasm runtime, which is hardened so a
+single call cannot run away with host CPU:
+
+- **Per-call cancellation.** The runtime is built with
+  `WithCloseOnContextDone`, so the `context.Context` you pass to
+  `ToHTMLContext` / `ToHTMLOptionsContext` genuinely interrupts CPU-bound parse
+  loops. An expired deadline or canceled context returns promptly with an error
+  that satisfies `errors.Is(err, context.DeadlineExceeded)` /
+  `context.Canceled`, instead of letting the input run to completion.
+
+  > [!IMPORTANT]
+  > For **untrusted input**, always use `ToHTMLContext` (or
+  > `ToHTMLOptionsContext`) with a deadline. The plain `ToHTML` /
+  > `ToHTMLStatic` / `ToHTMLOptions` helpers use `context.Background()` and are
+  > therefore **unbounded** in time. Some pathological inputs are processed in
+  > super-linear time by the engine, so without a deadline a single small
+  > adversarial document can occupy a goroutine for many seconds.
+
+  ```go
+  ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+  defer cancel()
+  html, err := carve.ToHTMLContext(ctx, untrusted)
+  if errors.Is(err, context.DeadlineExceeded) {
+      // input exceeded the render budget; reject it
+  }
+  ```
+
 ## Static render mode
 
 `ToHTMLStatic` (or `ToHTMLOptions` with `Options{Static: true}`) produces

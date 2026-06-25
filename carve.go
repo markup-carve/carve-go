@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"context"
 	_ "embed"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -41,7 +42,13 @@ var (
 
 func loadEngine(ctx context.Context) (*compiledEngine, error) {
 	engineOnce.Do(func() {
-		rt := wazero.NewRuntime(ctx)
+		// WithCloseOnContextDone(true) is what makes a caller's context
+		// deadline/cancellation actually interrupt CPU-bound guest code:
+		// without it, wazero never checks the context once a wasm function is
+		// running, so a per-call timeout is a no-op against a long parse loop.
+		cfg := wazero.NewRuntimeConfig().
+			WithCloseOnContextDone(true)
+		rt := wazero.NewRuntimeWithConfig(ctx, cfg)
 		// WASI host functions satisfy the engine's __wasi_* imports
 		// (fd_read for stdin, fd_write for stdout, proc_exit, etc.).
 		wasi_snapshot_preview1.MustInstantiate(ctx, rt)
@@ -104,12 +111,20 @@ type Options struct {
 //
 // This is the interactive default: live HTML with no bundled extensions
 // enabled. For self-contained static HTML, see ToHTMLStatic or ToHTMLOptions.
+//
+// It uses context.Background() and is therefore unbounded in time. For
+// untrusted input, prefer ToHTMLContext with a deadline so a pathological
+// (super-linear) document cannot occupy a goroutine indefinitely; see the
+// "Resource limits and untrusted input" section of the package README.
 func ToHTML(source string) (string, error) {
 	return ToHTMLContext(context.Background(), source)
 }
 
 // ToHTMLContext is ToHTML with a caller-supplied context. The context bounds
-// both wasm compilation (first call) and the per-call module execution.
+// both wasm compilation (first call) and the per-call module execution: a
+// deadline or cancellation interrupts CPU-bound parsing inside the engine and
+// returns an error satisfying errors.Is(err, context.DeadlineExceeded) /
+// context.Canceled. Use this with a deadline for untrusted input.
 func ToHTMLContext(ctx context.Context, source string) (string, error) {
 	return ToHTMLOptionsContext(ctx, source, Options{})
 }
@@ -179,6 +194,18 @@ func ToHTMLOptionsContext(ctx context.Context, source string, opts Options) (str
 
 	mod, err := eng.runtime.InstantiateModule(ctx, eng.module, config)
 	if err != nil {
+		// A context deadline/cancellation interrupts the guest (thanks to
+		// WithCloseOnContextDone) and surfaces as a *sys.ExitError whose
+		// special exit code matches context.Canceled / DeadlineExceeded via
+		// errors.Is. Translate that back into the caller's context error so an
+		// interrupted untrusted input is reported as a timeout, not a generic
+		// non-zero engine exit.
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return "", fmt.Errorf("carve: render canceled: %w", ctxErr)
+			}
+			return "", fmt.Errorf("carve: render canceled: %w", err)
+		}
 		// A clean exit code 0 surfaces as *sys.ExitError, not a failure.
 		if exitErr, ok := err.(*sys.ExitError); ok {
 			if exitErr.ExitCode() == 0 {
