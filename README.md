@@ -74,7 +74,7 @@ Carve inline conventions (note these differ from Markdown):
 ## Resource limits and untrusted input
 
 The embedded engine runs in the wazero wasm runtime, which is hardened so a
-single call cannot run away with host CPU:
+single call cannot run away with host CPU or memory:
 
 - **Per-call cancellation.** The runtime is built with
   `WithCloseOnContextDone`, so the `context.Context` you pass to
@@ -99,6 +99,13 @@ single call cannot run away with host CPU:
       // input exceeded the render budget; reject it
   }
   ```
+
+- **Memory cap.** Each instance's linear memory is capped at 512 MiB (8192
+  wasm pages) via `WithMemoryLimitPages`, well under wazero's 4 GiB default
+  ceiling. This is comfortably more than any reasonable Carve document needs,
+  while preventing one input (or one per concurrent call) from exhausting host
+  memory. An allocation past the cap fails gracefully inside the guest and is
+  reported as a non-zero engine exit, rather than OOM-killing the host process.
 
 ## Static render mode
 

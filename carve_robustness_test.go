@@ -125,3 +125,40 @@ func TestToHTMLContext_CancellationDoesNotPoisonRuntime(t *testing.T) {
 		t.Fatalf("unexpected output after recovery: %q", out)
 	}
 }
+
+// TestMemoryCapEnforced is the Finding 3 regression guard: an input whose
+// processing would grow guest memory past the configured cap must fail
+// gracefully (a returned error) rather than OOM-killing the host. The 200 MiB
+// input drives the guest past the 512 MiB (8192-page) limit while reading
+// stdin, so memory.grow fails inside the guest and the engine exits non-zero.
+//
+// The assertion is on the *contract* (an error is returned, the host survives,
+// the call returns), not on an exact error string, since the precise failure
+// point can shift with engine changes. With the default 4 GiB ceiling this
+// input would instead try to allocate hundreds of MiB on the host unchecked.
+func TestMemoryCapEnforced(t *testing.T) {
+	// Low-CPU but memory-hungry: a large run of plain bytes the engine must
+	// buffer. Sized above the 512 MiB cap once in-guest copies are accounted
+	// for, but far below the 4 GiB default ceiling.
+	src := strings.Repeat("a", 200<<20)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	out, err := ToHTMLContext(ctx, src)
+	if err == nil {
+		t.Fatalf("expected over-cap input to fail gracefully, got nil error (out len %d)", len(out))
+	}
+	// Must not be a context timeout: that would mean the run was CPU-bound and
+	// never actually hit the memory cap, making this a false guard.
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		t.Fatalf("expected a memory-cap failure, got a context error (cap not exercised): %v", err)
+	}
+	if out != "" {
+		t.Fatalf("expected no output on a failed render, got %d bytes", len(out))
+	}
+	// Sanity: the host is still alive and serving requests after the rejection.
+	if _, err := ToHTML("# ok"); err != nil {
+		t.Fatalf("host unusable after over-cap rejection: %v", err)
+	}
+}

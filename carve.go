@@ -23,6 +23,18 @@ import (
 //go:embed internal/wasm/carve.wasm
 var carveWasm []byte
 
+// maxMemoryPages caps the linear memory a single render instance may grow to.
+//
+// Wasm memory is paged at 64 KiB per page, and wazero's default ceiling is
+// 65536 pages (4 GiB) per instance. That default lets one untrusted document
+// drive the host toward 4 GiB of allocation per concurrent call. We cap it at
+// 8192 pages (512 MiB), which is comfortably more than any reasonable Carve
+// document needs to parse and render, while keeping a runaway/adversarial input
+// from exhausting host memory. An allocation past this cap fails inside the
+// guest (memory.grow returns -1) and surfaces as a non-zero engine exit rather
+// than OOM-killing the host process.
+const maxMemoryPages uint32 = 8192
+
 // compiled holds the once-compiled module and its runtime. Compilation is
 // relatively expensive, so it is done lazily on first use and reused for the
 // lifetime of the process. Each render call instantiates a fresh module from
@@ -46,8 +58,11 @@ func loadEngine(ctx context.Context) (*compiledEngine, error) {
 		// deadline/cancellation actually interrupt CPU-bound guest code:
 		// without it, wazero never checks the context once a wasm function is
 		// running, so a per-call timeout is a no-op against a long parse loop.
+		// WithMemoryLimitPages caps linear memory per instance (see
+		// maxMemoryPages) so one input cannot drive the host toward 4 GiB.
 		cfg := wazero.NewRuntimeConfig().
-			WithCloseOnContextDone(true)
+			WithCloseOnContextDone(true).
+			WithMemoryLimitPages(maxMemoryPages)
 		rt := wazero.NewRuntimeWithConfig(ctx, cfg)
 		// WASI host functions satisfy the engine's __wasi_* imports
 		// (fd_read for stdin, fd_write for stdout, proc_exit, etc.).
