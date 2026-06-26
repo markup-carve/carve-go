@@ -391,3 +391,70 @@ func binSupportsStatic(t *testing.T, bin string) bool {
 	}
 	return strings.Contains(string(out), "--static")
 }
+
+// --- CodeCallouts (Tier-2 extension) -----------------------------------------
+
+// TestToHTML_CodeCallouts asserts that <N> markers in a fenced code block are
+// rendered as callout bubbles and the following paragraph of <N> descriptions
+// becomes an ordered list, when the bundled extensions are enabled.
+func TestToHTML_CodeCallouts(t *testing.T) {
+	src := "``` go\nfmt.Println(\"hello\") // <1>\n```\n\n<1> prints a greeting\n"
+	out, err := ToHTMLOptions(src, Options{Extensions: []string{"all"}})
+	if err != nil {
+		t.Fatalf("ToHTMLOptions error: %v", err)
+	}
+	if !strings.Contains(out, `<b class="callout"`) {
+		t.Fatalf("expected callout bubble <b class=\"callout\">, got %q", out)
+	}
+	if !strings.Contains(out, `<ol class="callouts">`) {
+		t.Fatalf("expected callout list <ol class=\"callouts\">, got %q", out)
+	}
+	if !strings.Contains(out, "prints a greeting") {
+		t.Fatalf("expected callout text, got %q", out)
+	}
+}
+
+// TestToHTML_CodeCallouts_NoExtensions asserts that without --extensions the
+// code block is emitted verbatim (the <1> marker is not processed).
+func TestToHTML_CodeCallouts_NoExtensions(t *testing.T) {
+	src := "``` go\nfmt.Println(\"hello\") // <1>\n```\n\n<1> prints a greeting\n"
+	out, err := ToHTML(src)
+	if err != nil {
+		t.Fatalf("ToHTML error: %v", err)
+	}
+	// No callout bubble; the raw marker text appears in the code block.
+	if strings.Contains(out, `class="callout"`) {
+		t.Fatalf("callout must not appear without --extensions, got %q", out)
+	}
+	if !strings.Contains(out, "<pre") {
+		t.Fatalf("expected plain code block, got %q", out)
+	}
+}
+
+// --- Citations (Tier-2 extension) ----------------------------------------
+//
+// Citations require the Rust-level Citations extension, which is a library API
+// concern. The carve CLI (and thus the WASI shim) does not expose a
+// --citations flag, so [@key] references and their in-document [@key]: defs
+// render as ordinary mention spans and inline text via the WASI path. The
+// tests below document this behavior and guard against regressions.
+
+// TestToHTML_Citation_NotResolved confirms that a [@key] citation reference is
+// rendered as a mention span by the WASI engine (Citations not in CLI bundle),
+// and does NOT crash.
+func TestToHTML_Citation_NotResolved(t *testing.T) {
+	// A citation reference followed by an in-document definition.
+	src := "See [@smith2020].\n\n[@smith2020]: Smith, J. (2020). Title.\n"
+	out, err := ToHTMLOptions(src, Options{Extensions: []string{"all"}})
+	if err != nil {
+		t.Fatalf("ToHTMLOptions error: %v", err)
+	}
+	// Without the Citations extension the [@key] is parsed as a bracketed mention.
+	if !strings.Contains(out, "smith2020") {
+		t.Fatalf("expected smith2020 key in output, got %q", out)
+	}
+	// Must not crash or return an empty body.
+	if strings.TrimSpace(out) == "" {
+		t.Fatalf("expected non-empty output, got %q", out)
+	}
+}
