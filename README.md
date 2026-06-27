@@ -10,8 +10,10 @@ It embeds a WASI (`wasm32-wasip1`) build of the reference Carve engine
 contract (Carve source on stdin, HTML on stdout). The Go output is therefore
 byte-for-byte the output of the engine it wraps.
 
-This fills the Go gap for Carve and is the prerequisite for a future Hugo
-integration.
+This fills the Go gap for Carve and powers [carve-hugo](https://github.com/markup-carve/carve-hugo),
+a preprocessor that renders Carve content to HTML for Hugo (stock Hugo cannot
+load a custom Go renderer, so carve-hugo uses this module as a library rather
+than running in-process).
 
 ## Install
 
