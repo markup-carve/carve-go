@@ -178,9 +178,9 @@ module needs:
 - appends a single trailing newline if the output lacks one,
 - accepts `--static` and `--extensions` for the static render mode above.
 
-The committed `.wasm` is built from carve-rs branch `main` (static render mode
-merged via PR #143), commit
-`f7b3658746f4f0d1a58cd1ce3fa22a153b07cbfd`.
+The committed `.wasm` is built from carve-rs branch `main`, commit
+`0a782d214b225366a31b7ad71fea88b9da467298` (the full Tier-3 extension set; the
+crate is published as `carve-lang` but the CLI binary embedded here is `carve`).
 
 Because the existing CLI already does stdin to HTML stdout, **no wrapper crate
 is needed**. Regenerate the artifact with:
@@ -209,7 +209,8 @@ path dependency). For a published, reproducible build, pin a specific carve-rs
 revision. For example, clone a tagged release and point `CARVE_RS` at it:
 
 ```bash
-git clone --branch v0.1.0 https://github.com/markup-carve/carve-rs /tmp/carve-rs
+git clone https://github.com/markup-carve/carve-rs /tmp/carve-rs
+git -C /tmp/carve-rs checkout 0a782d214b225366a31b7ad71fea88b9da467298
 CARVE_RS=/tmp/carve-rs ./build-wasm.sh
 ```
 

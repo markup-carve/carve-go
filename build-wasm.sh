@@ -15,8 +15,8 @@
 # is needed; we compile the `carve` bin directly to wasm32-wasip1.
 #
 # Pinned carve-rs revision used to generate the committed .wasm:
-#   branch main (Citations #173 + CodeCallouts #172 wired into --extensions)
-#   commit 8142fb9 (feat(cli): wire CodeCallouts into --extensions bundle)
+#   branch main, commit 0a782d214b225366a31b7ad71fea88b9da467298
+#   (crate renamed to carve-lang; bin stays `carve`; full Tier-3 extension set)
 #
 # Usage:
 #   CARVE_RS=/path/to/carve-rs ./build-wasm.sh
@@ -24,7 +24,7 @@
 # CARVE_RS defaults to the sibling checkout used during development. For a
 # reproducible build, clone the pinned revision and point CARVE_RS at it:
 #   git clone https://github.com/markup-carve/carve-rs /tmp/carve-rs-static
-#   git -C /tmp/carve-rs-static checkout f7b3658746f4f0d1a58cd1ce3fa22a153b07cbfd
+#   git -C /tmp/carve-rs-static checkout 0a782d214b225366a31b7ad71fea88b9da467298
 #   CARVE_RS=/tmp/carve-rs-static ./build-wasm.sh
 set -euo pipefail
 
