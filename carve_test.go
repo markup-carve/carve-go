@@ -458,3 +458,29 @@ func TestToHTML_Citation_NotResolved(t *testing.T) {
 		t.Fatalf("expected non-empty output, got %q", out)
 	}
 }
+
+// The embedded carve.wasm is a committed build artifact, so it can silently
+// fall behind the engine. These pin the language surface it must carry.
+func TestEmbeddedEngineLanguageSurface(t *testing.T) {
+	cases := []struct{ name, in, want string }{
+		// Superscript and subscript are braced-only: a bare `^` / `,` is literal.
+		{"bare sup is literal", "a ^2^ b", "<p>a ^2^ b</p>"},
+		{"braced sup renders", "x{^2^}", "<p>x<sup>2</sup></p>"},
+		{"bare sub is literal", "H,2,O", "<p>H,2,O</p>"},
+		{"braced sub renders", "H{,2,}O", "<p>H<sub>2</sub>O</p>"},
+		// A symbol needs a leading word boundary, so these stay literal text.
+		{"glued colon run is literal", "a:b:c and 10:30: here", "<p>a:b:c and 10:30: here</p>"},
+		{"glued mention is literal", "mail me@example.com now", "<p>mail me@example.com now</p>"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := ToHTML(tc.in)
+			if err != nil {
+				t.Fatalf("ToHTML(%q): %v", tc.in, err)
+			}
+			if strings.TrimSpace(got) != tc.want {
+				t.Errorf("ToHTML(%q)\n got: %s\nwant: %s", tc.in, strings.TrimSpace(got), tc.want)
+			}
+		})
+	}
+}
