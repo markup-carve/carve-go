@@ -8,11 +8,13 @@ import (
 	"time"
 )
 
-// quadraticInput is a Carve source that the engine processes in O(n^2): each
-// "[a](" opens a link the parser must keep scanning for. At this size it takes
-// several seconds (often 10s+) to run to completion, which makes it a reliable
-// stand-in for any CPU-bound input that out-runs a per-call deadline.
-func quadraticInput() string { return strings.Repeat("[a](", 10000) }
+// slowInput is a Carve source whose full parse reliably out-runs the short
+// per-call deadline used below, so it exercises deadline interruption of
+// CPU-bound guest code. Each "[a](" opens a link destination the parser keeps
+// scanning for; the engine handles this in linear time (an earlier O(n^2) was
+// fixed upstream), so the size is chosen to keep the uninterrupted parse well
+// above the 50ms deadline (~0.5s here) rather than relying on quadratic blowup.
+func slowInput() string { return strings.Repeat("[a](", 100000) }
 
 // warmEngine forces the one-time, relatively expensive wasm compilation to
 // happen now, on a context with no deadline. Tests that assert render
@@ -38,7 +40,7 @@ func TestToHTMLContext_DeadlineInterrupts(t *testing.T) {
 	// render, never the cold-start compilation (see warmEngine).
 	warmEngine(t)
 
-	src := quadraticInput()
+	src := slowInput()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
@@ -54,11 +56,11 @@ func TestToHTMLContext_DeadlineInterrupts(t *testing.T) {
 		t.Fatalf("expected errors.Is(err, context.DeadlineExceeded), got %v", err)
 	}
 	// The whole point of the fix: the call returns because it was interrupted,
-	// not because it ran to completion. The uninterrupted parse of this input
-	// takes ~10s natively and ~40s+ under -race; wazero's context-done check is
-	// periodic, so interrupt latency varies with machine load (and is much
-	// larger under -race). A 20s ceiling unambiguously proves the run was cut
-	// short rather than completed, while tolerating that periodic-check jitter.
+	// not because it ran to completion. The uninterrupted parse of this input is
+	// ~0.5s natively (more under -race), well above the 50ms deadline; wazero's
+	// context-done check is periodic, so interrupt latency varies with machine
+	// load (and is larger under -race). A 20s ceiling unambiguously proves the
+	// run was cut short rather than completed, while tolerating that jitter.
 	if elapsed > 20*time.Second {
 		t.Fatalf("deadline did not interrupt: took %v (uninterrupted run is far longer)", elapsed)
 	}
@@ -69,7 +71,7 @@ func TestToHTMLContext_DeadlineInterrupts(t *testing.T) {
 func TestToHTMLContext_CanceledInterrupts(t *testing.T) {
 	warmEngine(t)
 
-	src := quadraticInput()
+	src := slowInput()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // canceled before the call
@@ -120,7 +122,7 @@ func TestToHTMLContext_CancellationDoesNotPoisonRuntime(t *testing.T) {
 	// Canceled context first (possibly the very first call into the package).
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := ToHTMLContext(ctx, quadraticInput()); err == nil {
+	if _, err := ToHTMLContext(ctx, slowInput()); err == nil {
 		t.Fatalf("expected canceled context to error")
 	}
 	// Healthy call must still work afterward: the shared engine is not poisoned.
