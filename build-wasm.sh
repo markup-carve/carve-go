@@ -15,8 +15,8 @@
 # is needed; we compile the `carve` bin directly to wasm32-wasip1.
 #
 # Pinned carve-rs revision used to generate the committed .wasm:
-#   branch main, commit e83f889e044474d232562eb4e5173ea5839614b7
-#   (loose definition bodies + `+` continuation + lazy continuation)
+#   branch main, commit 24b14c04ea95daecdd482acab10501144cf11b5b
+#   (definition loose + `+` + lazy + `:  +` first-block continuation)
 #
 # Usage:
 #   CARVE_RS=/path/to/carve-rs ./build-wasm.sh
