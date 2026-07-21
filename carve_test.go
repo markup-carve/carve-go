@@ -484,3 +484,41 @@ func TestEmbeddedEngineLanguageSurface(t *testing.T) {
 		})
 	}
 }
+
+// --- FencedRender diagram presets -------------------------------------------
+
+// TestToHTML_DiagramPresets asserts that the full FencedRender preset set is
+// registered under --extensions, so plantuml/puml, dot/graphviz and d2 fences
+// become hydration elements (rendered client-side downstream).
+func TestToHTML_DiagramPresets(t *testing.T) {
+	cases := []struct {
+		src  string
+		want string
+	}{
+		{"``` plantuml\nA -> B\n```\n", `<pre class="plantuml">A -> B</pre>`},
+		{"``` puml\nA -> B\n```\n", `<pre class="plantuml">A -> B</pre>`},
+		{"``` dot\na -> b\n```\n", `<pre class="graphviz">a -> b</pre>`},
+		{"``` d2\nx -> y\n```\n", `<pre class="d2">x -> y</pre>`},
+	}
+	for _, c := range cases {
+		out, err := ToHTMLOptions(c.src, Options{Extensions: []string{"all"}})
+		if err != nil {
+			t.Fatalf("ToHTMLOptions(%q) error: %v", c.src, err)
+		}
+		if !strings.Contains(out, c.want) {
+			t.Fatalf("for %q expected %q, got %q", c.src, c.want, out)
+		}
+	}
+}
+
+// TestToHTML_DiagramPreset_NoExtensions asserts a plantuml fence stays a plain
+// code block without --extensions.
+func TestToHTML_DiagramPreset_NoExtensions(t *testing.T) {
+	out, err := ToHTML("``` plantuml\nA -> B\n```\n")
+	if err != nil {
+		t.Fatalf("ToHTML error: %v", err)
+	}
+	if strings.Contains(out, `class="plantuml"`) {
+		t.Fatalf("plantuml should not render without extensions, got %q", out)
+	}
+}
