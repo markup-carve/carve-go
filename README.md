@@ -151,7 +151,8 @@ carve-py #1, carve-rb #1).
 
 > [!NOTE]
 > carve-rs - the embedded engine - ships Details, Spoiler, FencedRender
-> (mermaid / chart / graphviz) and MathBlock, but **not** a Tabs / CodeGroup
+> (every diagram preset: mermaid, plantuml, d2, graphviz, wavedrom, abc,
+> vega-lite, chart) and MathBlock, but **not** a Tabs / CodeGroup
 > extension (those are carve-js / carve-php only). So tab/code-group flattening
 > is not part of carve-go's static behavior; spoiler reveal and `details`
 > opening are the interactive-flatten cases this engine actually covers.
@@ -179,7 +180,7 @@ module needs:
 - accepts `--static` and `--extensions` for the static render mode above.
 
 The committed `.wasm` is built from carve-rs branch `main`, commit
-`0a782d214b225366a31b7ad71fea88b9da467298` (the full Tier-3 extension set; the
+`cffca30d91537487fe464aafebd95740eb74e936` (the full Tier-3 extension set; the
 crate is published as `carve-lang` but the CLI binary embedded here is `carve`).
 
 Because the existing CLI already does stdin to HTML stdout, **no wrapper crate
@@ -210,7 +211,7 @@ revision. For example, clone a tagged release and point `CARVE_RS` at it:
 
 ```bash
 git clone https://github.com/markup-carve/carve-rs /tmp/carve-rs
-git -C /tmp/carve-rs checkout 0a782d214b225366a31b7ad71fea88b9da467298
+git -C /tmp/carve-rs checkout cffca30d91537487fe464aafebd95740eb74e936
 CARVE_RS=/tmp/carve-rs ./build-wasm.sh
 ```
 
