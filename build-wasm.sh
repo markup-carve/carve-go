@@ -15,9 +15,9 @@
 # is needed; we compile the `carve` bin directly to wasm32-wasip1.
 #
 # Pinned carve-rs revision used to generate the committed .wasm:
-#   branch main, commit 80eb4384d4b4c7113110f2d7920ea43ea6531cff
-#   ("fix(plain): a document-level trim must not eat the first line's leading
-#   space", carve-rs#325)
+#   branch main, commit 0e157ad81ee273af3038f7fa7213b451397fca67
+#   ("perf: drop the dead negative cache in the closer lookahead",
+#   carve-rs#330)
 #
 # Keep this in step with the artifact. The CI "corpus" job runs the mandatory
 # spec corpus through the committed .wasm, so a rebuild that is forgotten shows
@@ -48,8 +48,22 @@ rustup target add wasm32-wasip1
 # Build the carve CLI for WASI.
 ( cd "${CARVE_RS}" && cargo build --release --target wasm32-wasip1 --bin carve )
 
+# Ask cargo where it actually put the artifact instead of assuming
+# $CARVE_RS/target. A shared CARGO_TARGET_DIR (a global config, a workspace, or
+# the env var) moves it elsewhere, and the old hard-coded path then failed the
+# copy AFTER a successful two-minute build - which reads like a build failure and
+# leaves the previous .wasm silently in place.
+TARGET_DIR="$(cd "${CARVE_RS}" && cargo metadata --format-version 1 --no-deps \
+  | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')"
+WASM="${TARGET_DIR:-${CARVE_RS}/target}/wasm32-wasip1/release/carve.wasm"
+
+if [ ! -f "${WASM}" ]; then
+  echo "error: built artifact not found at ${WASM}" >&2
+  exit 1
+fi
+
 mkdir -p "${HERE}/internal/wasm"
-cp "${CARVE_RS}/target/wasm32-wasip1/release/carve.wasm" "${OUT}"
+cp "${WASM}" "${OUT}"
 
 echo "wrote ${OUT}"
 ls -la "${OUT}"

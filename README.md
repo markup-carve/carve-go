@@ -211,7 +211,7 @@ module needs:
 - accepts `--static` and `--extensions` for the static render mode above.
 
 The committed `.wasm` is built from carve-rs branch `main`, commit
-`80eb4384d4b4c7113110f2d7920ea43ea6531cff` (the full Tier-3 extension set; the
+`0e157ad81ee273af3038f7fa7213b451397fca67` (the full Tier-3 extension set; the
 crate is published as `carve-lang` but the CLI binary embedded here is `carve`).
 
 Because the artifact is prebuilt, it can fall behind the spec with no change in
