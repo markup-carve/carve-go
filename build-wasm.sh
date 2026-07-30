@@ -15,8 +15,13 @@
 # is needed; we compile the `carve` bin directly to wasm32-wasip1.
 #
 # Pinned carve-rs revision used to generate the committed .wasm:
-#   branch main, commit cffca30d91537487fe464aafebd95740eb74e936
-#   (definitions: loose, +, lazy, first-block, dt-fold, blank-before-def)
+#   branch main, commit 80eb4384d4b4c7113110f2d7920ea43ea6531cff
+#   ("fix(plain): a document-level trim must not eat the first line's leading
+#   space", carve-rs#325)
+#
+# Keep this in step with the artifact. The CI "corpus" job runs the mandatory
+# spec corpus through the committed .wasm, so a rebuild that is forgotten shows
+# up as corpus mismatches rather than as silently stale output.
 #
 # Usage:
 #   CARVE_RS=/path/to/carve-rs ./build-wasm.sh

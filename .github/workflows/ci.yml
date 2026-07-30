@@ -26,3 +26,27 @@ jobs:
 
       - name: Test
         run: go test ./...
+
+  # The embedded wasm is a prebuilt artifact, so it can fall behind the spec
+  # without any change in this repository. Run the mandatory corpus through it
+  # so that drift fails a build instead of waiting to be noticed.
+  corpus:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check out the spec corpus
+        uses: actions/checkout@v4
+        with:
+          repository: markup-carve/carve
+          path: spec
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - name: Corpus
+        env:
+          CARVE_SPEC_CORPUS: ${{ github.workspace }}/spec/tests/corpus
+        run: go test -run TestSpecCorpus -v ./...
