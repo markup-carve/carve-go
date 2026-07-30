@@ -66,6 +66,8 @@ func ToHTMLOptionsContext(ctx context.Context, source string, opts Options) (str
 type Options struct {
 	Static     bool     // self-contained static HTML (CLI --static; implies --extensions)
 	Extensions []string // enable bundled interactive extensions (CLI --extensions)
+	Safe       bool     // escape =html raw blocks/spans (CLI --safe)
+	Profile    string   // full|article|comment|minimal (CLI --profile)
 }
 ```
 
@@ -109,6 +111,35 @@ single call cannot run away with host CPU or memory:
   while preventing one input (or one per concurrent call) from exhausting host
   memory. An allocation past the cap fails gracefully inside the guest and is
   reported as a non-zero engine exit, rather than OOM-killing the host process.
+
+### Content safety
+
+Resource limits are only half of it. Carve's normative hardening is always on
+and needs no option: dangerous URL schemes are blanked (`javascript:`, `data:`
+and the rest of the spec denylist), event-handler attributes like `onclick` are
+dropped, and the bidi override/isolate characters behind Trojan Source are
+removed from rendered text.
+
+Raw passthrough is the deliberate exception. A ` ```=html ` block or
+`` `…`{=html} `` span is emitted **verbatim** by design, so it is the one thing
+untrusted input must turn off:
+
+```go
+ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+defer cancel()
+
+html, err := carve.ToHTMLOptionsContext(ctx, untrusted, carve.Options{
+    Safe:    true,      // escape =html blocks/spans instead of emitting them
+    Profile: "comment", // full | article | comment | minimal
+})
+```
+
+`Profile` restricts which constructs are allowed at all and caps input length.
+The engine owns the list of valid names, so an unknown one comes back as an
+error carrying the engine's message rather than being silently ignored.
+
+Full recipe, defaults and threat model:
+[Security](https://markup-carve.github.io/carve/security).
 
 ## Static render mode
 

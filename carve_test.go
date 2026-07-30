@@ -522,3 +522,79 @@ func TestToHTML_DiagramPreset_NoExtensions(t *testing.T) {
 		t.Fatalf("plantuml should not render without extensions, got %q", out)
 	}
 }
+
+// rawHTMLSrc carries a =html block, the one construct Carve emits verbatim by
+// design and therefore the one thing untrusted input has to turn off.
+const rawHTMLSrc = "# Heading\n\n```=html\n<script>alert(1)</script>\n```\n"
+
+// TestToHTMLOptions_SafeEscapesRawHTML pins that Safe reaches the engine.
+func TestToHTMLOptions_SafeEscapesRawHTML(t *testing.T) {
+	safe, err := ToHTMLOptions(rawHTMLSrc, Options{Safe: true})
+	if err != nil {
+		t.Fatalf("safe error: %v", err)
+	}
+	if strings.Contains(safe, "<script>") {
+		t.Fatalf("Safe must not emit a live script tag, got %q", safe)
+	}
+	if !strings.Contains(safe, "&lt;script&gt;") {
+		t.Fatalf("Safe should escape the raw block, got %q", safe)
+	}
+}
+
+// TestToHTML_EmitsRawHTMLByDefault is what makes the test above able to fail:
+// without it, an unrelated change that stopped emitting raw HTML at all would
+// leave the Safe assertion green for the wrong reason.
+func TestToHTML_EmitsRawHTMLByDefault(t *testing.T) {
+	out, err := ToHTML(rawHTMLSrc)
+	if err != nil {
+		t.Fatalf("ToHTML error: %v", err)
+	}
+	if !strings.Contains(out, "<script>alert(1)</script>") {
+		t.Fatalf("raw passthrough is the documented default, got %q", out)
+	}
+}
+
+// TestToHTMLOptions_ProfileRestrictsConstructs checks a profile reaches the
+// engine: the comment profile disallows headings, so the h1 becomes text.
+func TestToHTMLOptions_ProfileRestrictsConstructs(t *testing.T) {
+	out, err := ToHTMLOptions(rawHTMLSrc, Options{Profile: "comment"})
+	if err != nil {
+		t.Fatalf("profile error: %v", err)
+	}
+	if strings.Contains(out, "<h1>") {
+		t.Fatalf("the comment profile disallows headings, got %q", out)
+	}
+
+	// And the default keeps the heading, so the check above can fail.
+	def, err := ToHTML(rawHTMLSrc)
+	if err != nil {
+		t.Fatalf("ToHTML error: %v", err)
+	}
+	if !strings.Contains(def, "<h1>Heading</h1>") {
+		t.Fatalf("expected a heading without a profile, got %q", def)
+	}
+}
+
+// TestToHTMLOptions_UnknownProfileErrors documents that the engine owns the
+// list of valid names, so this package does not duplicate (and drift from) it.
+func TestToHTMLOptions_UnknownProfileErrors(t *testing.T) {
+	_, err := ToHTMLOptions("# Hi\n", Options{Profile: "nope"})
+	if err == nil {
+		t.Fatal("expected an error for an unknown profile")
+	}
+	if !strings.Contains(err.Error(), "nope") {
+		t.Fatalf("the error should carry the engine's message, got %v", err)
+	}
+}
+
+// TestToHTMLOptions_SafeComposesWithStatic asserts the flags are independent:
+// Safe must still escape when static mode is also on.
+func TestToHTMLOptions_SafeComposesWithStatic(t *testing.T) {
+	out, err := ToHTMLOptions(rawHTMLSrc, Options{Safe: true, Static: true})
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	if strings.Contains(out, "<script>") {
+		t.Fatalf("Safe must hold with Static, got %q", out)
+	}
+}

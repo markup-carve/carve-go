@@ -128,6 +128,26 @@ type Options struct {
 	// selection if the engine gains it, without a breaking change. The
 	// element strings are advisory today.
 	Extensions []string
+
+	// Safe escapes =html raw blocks and spans instead of emitting them. It
+	// maps to the engine CLI flag --safe (--no-raw-html).
+	//
+	// Carve's normative hardening is always on and needs no option here:
+	// dangerous URL schemes are blanked, event-handler attributes dropped,
+	// and the bidi override/isolate characters behind Trojan Source removed.
+	// Raw passthrough is the deliberate exception - a =html block renders
+	// verbatim by design - so it is the one thing untrusted input must turn
+	// off. Set Safe for anything you did not author yourself.
+	Safe bool
+
+	// Profile restricts which constructs are allowed at all and caps input
+	// length: "full", "article", "comment" or "minimal". Empty means no
+	// profile. It maps to the engine CLI flag --profile.
+	//
+	// The name is validated by the engine rather than duplicated here, so a
+	// profile added to the engine works without a change in this package; an
+	// unknown name comes back as an error carrying the engine's message.
+	Profile string
 }
 
 // ToHTML renders Carve source to HTML using the embedded engine.
@@ -208,6 +228,12 @@ func ToHTMLOptionsContext(ctx context.Context, source string, opts Options) (str
 	// switch, not a per-extension selector.)
 	if opts.Static || len(opts.Extensions) > 0 {
 		args = append(args, "--extensions")
+	}
+	if opts.Safe {
+		args = append(args, "--safe")
+	}
+	if opts.Profile != "" {
+		args = append(args, "--profile", opts.Profile)
 	}
 
 	stdin := strings.NewReader(source)
