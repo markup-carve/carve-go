@@ -211,8 +211,18 @@ module needs:
 - accepts `--static` and `--extensions` for the static render mode above.
 
 The committed `.wasm` is built from carve-rs branch `main`, commit
-`cffca30d91537487fe464aafebd95740eb74e936` (the full Tier-3 extension set; the
+`80eb4384d4b4c7113110f2d7920ea43ea6531cff` (the full Tier-3 extension set; the
 crate is published as `carve-lang` but the CLI binary embedded here is `carve`).
+
+Because the artifact is prebuilt, it can fall behind the spec with no change in
+this repository - and it did, until the corpus job below started catching it. CI
+runs the mandatory spec corpus through the **committed** `.wasm` and requires
+byte-identical HTML, so a forgotten rebuild fails a build instead of quietly
+shipping different output. Locally:
+
+```bash
+CARVE_SPEC_CORPUS=/path/to/carve/tests/corpus go test -run TestSpecCorpus ./...
+```
 
 Because the existing CLI already does stdin to HTML stdout, **no wrapper crate
 is needed**. Regenerate the artifact with:
