@@ -236,11 +236,39 @@ func ToHTMLOptionsContext(ctx context.Context, source string, opts Options) (str
 		args = append(args, "--profile", opts.Profile)
 	}
 
-	stdin := strings.NewReader(source)
+	out, code, err := runEngine(ctx, eng, args, source)
+	if err != nil {
+		return "", err
+	}
+	if code != 0 {
+		return "", fmt.Errorf("carve: engine exited with code %d: %s", code, out.stderr)
+	}
+	return out.stdout, nil
+}
+
+// engineOutput is what one engine invocation produced.
+type engineOutput struct {
+	stdout string
+	stderr string
+}
+
+// runEngine invokes the embedded engine with `args`, feeding `source` on stdin,
+// and returns its output together with its EXIT CODE.
+//
+// The code is returned rather than folded into an error because not every
+// non-zero exit is a failure: `--stamp-check` answers a question with its exit
+// status, so a caller needs to tell "the document predates this engine" from
+// "the engine could not run".
+func runEngine(
+	ctx context.Context,
+	eng *compiledEngine,
+	args []string,
+	source string,
+) (engineOutput, int, error) {
 	var stdout, stderr bytes.Buffer
 
 	config := wazero.NewModuleConfig().
-		WithStdin(stdin).
+		WithStdin(strings.NewReader(source)).
 		WithStdout(&stdout).
 		WithStderr(&stderr).
 		WithArgs(args...).
@@ -249,6 +277,9 @@ func ToHTMLOptionsContext(ctx context.Context, source string, opts Options) (str
 		WithName("")
 
 	mod, err := eng.runtime.InstantiateModule(ctx, eng.module, config)
+	out := func() engineOutput {
+		return engineOutput{stdout: stdout.String(), stderr: strings.TrimSpace(stderr.String())}
+	}
 	if err != nil {
 		// A context deadline/cancellation interrupts the guest (thanks to
 		// WithCloseOnContextDone) and surfaces as a *sys.ExitError whose
@@ -258,21 +289,124 @@ func ToHTMLOptionsContext(ctx context.Context, source string, opts Options) (str
 		// non-zero engine exit.
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			if ctxErr := ctx.Err(); ctxErr != nil {
-				return "", fmt.Errorf("carve: render canceled: %w", ctxErr)
+				return out(), -1, fmt.Errorf("carve: render canceled: %w", ctxErr)
 			}
-			return "", fmt.Errorf("carve: render canceled: %w", err)
+			return out(), -1, fmt.Errorf("carve: render canceled: %w", err)
 		}
-		// A clean exit code 0 surfaces as *sys.ExitError, not a failure.
 		if exitErr, ok := err.(*sys.ExitError); ok {
-			if exitErr.ExitCode() == 0 {
-				return stdout.String(), nil
-			}
-			return "", fmt.Errorf("carve: engine exited with code %d: %s",
-				exitErr.ExitCode(), strings.TrimSpace(stderr.String()))
+			return out(), int(exitErr.ExitCode()), nil
 		}
-		return "", fmt.Errorf("carve: run wasm: %w", err)
+		return out(), -1, fmt.Errorf("carve: run wasm: %w", err)
 	}
 	// Module returned without calling proc_exit; close it and return output.
 	_ = mod.Close(ctx)
-	return stdout.String(), nil
+	return out(), 0, nil
+}
+
+// Stamp is a document's provenance marker, as written by `carve fmt --stamp`.
+//
+// It records the Carve spec version a document was last processed under, so
+// tooling can flag documents predating a breaking spec change. See
+// https://markup-carve.github.io/carve/versioning.
+type Stamp struct {
+	// Version is the spec version the document was last processed under.
+	Version string
+	// GeneratedBy is the engine that wrote the marker, empty when the marker
+	// records no writer.
+	GeneratedBy string
+}
+
+// ReadStamp reports the provenance marker a document carries.
+//
+// The second result is false when the document carries no marker, which is the
+// normal case for a hand-written document and means "unknown", not "current".
+//
+// It uses context.Background(); prefer ReadStampContext for untrusted input, for
+// the same reason ToHTML does.
+func ReadStamp(source string) (Stamp, bool, error) {
+	return ReadStampContext(context.Background(), source)
+}
+
+// ReadStampContext is ReadStamp with a caller-supplied context.
+func ReadStampContext(ctx context.Context, source string) (Stamp, bool, error) {
+	out, code, err := stampQuery(ctx, "--stamp-info", source)
+	if err != nil {
+		return Stamp{}, false, err
+	}
+	if code != 0 {
+		return Stamp{}, false, fmt.Errorf("carve: engine exited with code %d: %s", code, out.stderr)
+	}
+	return parseStampInfo(out.stdout)
+}
+
+// NeedsReview reports whether a document was last processed under an OLDER spec
+// version than the embedded engine targets, so the `[behavior]` changelog
+// entries between the two are worth reviewing.
+//
+// An unstamped document reports true: its provenance is unknown, and assuming it
+// is current is the unsafe direction. This mirrors carve-php's
+// Stamp::needsReview, carve-js's needsReview and carve-rs's needs_review, so the
+// four agree on the same document.
+func NeedsReview(source string) (bool, error) {
+	return NeedsReviewContext(context.Background(), source)
+}
+
+// NeedsReviewContext is NeedsReview with a caller-supplied context.
+func NeedsReviewContext(ctx context.Context, source string) (bool, error) {
+	// --stamp-check answers with its EXIT STATUS: 1 when the document predates
+	// this engine, 0 when it does not. Reading the code rather than the text
+	// keeps this independent of the report's wording.
+	out, code, err := stampQuery(ctx, "--stamp-check", source)
+	if err != nil {
+		return false, err
+	}
+	switch code {
+	case 0:
+		return false, nil
+	case 1:
+		return true, nil
+	default:
+		return false, fmt.Errorf("carve: engine exited with code %d: %s", code, out.stderr)
+	}
+}
+
+// stampQuery runs one of the engine's stamp modes over `source`.
+func stampQuery(ctx context.Context, flag string, source string) (engineOutput, int, error) {
+	eng, err := loadEngine()
+	if err != nil {
+		return engineOutput{}, -1, err
+	}
+
+	return runEngine(ctx, eng, []string{"carve", flag}, source)
+}
+
+// parseStampInfo reads the engine's --stamp-info report.
+//
+// The report is three labeled lines, or a single "unstamped …" line. Parsing our
+// own stable output is the cost of driving the engine over a stdio boundary; the
+// shape is pinned by tests here and by the cross-engine fixtures in carve-rs.
+func parseStampInfo(report string) (Stamp, bool, error) {
+	var stamp Stamp
+	found := false
+	for _, line := range strings.Split(report, "\n") {
+		switch {
+		case strings.HasPrefix(line, "unstamped"):
+			return Stamp{}, false, nil
+		case strings.HasPrefix(line, "carve-version:"):
+			stamp.Version = strings.TrimSpace(strings.TrimPrefix(line, "carve-version:"))
+			found = true
+		case strings.HasPrefix(line, "generated-by:"):
+			writer := strings.TrimSpace(strings.TrimPrefix(line, "generated-by:"))
+			// The engine prints this placeholder when the marker records no
+			// writer; an empty GeneratedBy says the same thing in Go.
+			if writer != "(unrecorded)" {
+				stamp.GeneratedBy = writer
+			}
+		}
+	}
+	if !found {
+		return Stamp{}, false, fmt.Errorf("carve: could not read stamp report: %q", report)
+	}
+
+	return stamp, true, nil
 }
