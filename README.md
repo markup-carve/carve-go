@@ -69,7 +69,40 @@ type Options struct {
 	Safe       bool     // escape =html raw blocks/spans (CLI --safe)
 	Profile    string   // full|article|comment|minimal (CLI --profile)
 }
+
+// ReadStamp reports the provenance marker a document carries; ok is false when
+// it carries none. NeedsReview reports whether the document was last processed
+// under an older spec version than the embedded engine targets.
+func ReadStamp(source string) (Stamp, bool, error)
+func ReadStampContext(ctx context.Context, source string) (Stamp, bool, error)
+func NeedsReview(source string) (bool, error)
+func NeedsReviewContext(ctx context.Context, source string) (bool, error)
+
+type Stamp struct {
+	Version     string // the spec version the document was last processed under
+	GeneratedBy string // the engine that wrote the marker, empty when unrecorded
+}
 ```
+
+### Stored documents and spec versions
+
+`carve fmt --stamp` (in any Carve engine) records the spec version a document was
+last processed under. carve-go reads that marker back, so a repository of stored
+`.crv` files can be checked for documents predating a breaking spec change:
+
+```go
+stale, err := carve.NeedsReview(source)
+```
+
+An **unstamped** document reports `true`: its provenance is unknown, and assuming
+it is current is the unsafe direction. The answer matches carve-php, carve-js and
+carve-rs on the same document - the marker format is the contract, not any one
+API - and the tests here read markers written by each of them.
+
+What a version difference means for a stored document is the
+[versioning contract](https://markup-carve.github.io/carve/versioning): only
+`[behavior]` changelog entries between the stamped version and yours can require
+a document change.
 
 Carve inline conventions (note these differ from Markdown):
 

@@ -598,3 +598,101 @@ func TestToHTMLOptions_SafeComposesWithStatic(t *testing.T) {
 		t.Fatalf("Safe must hold with Static, got %q", out)
 	}
 }
+
+// ---------------------------------------------------------------- stamp reader
+
+// These markers are the literal bytes carve-php, carve-js and carve-rs write, so
+// a divergence in any writer fails here rather than in the field.
+const (
+	stampFromPHP   = "# Hi\n\n%% carve-version: 0.1; generated-by: carve-php 0.1.0\n"
+	stampFromJS    = "# Hi\n\n%% carve-version: 0.1; generated-by: carve-js 0.1.0\n"
+	stampBlockForm = "# Hi\n\n%%%\ncarve-version: 0.1\ngenerated-by: carve-php 0.1.0\n%%%\n"
+	stampOld       = "# Hi\n\n%% carve-version: 0.0.9; generated-by: carve-rs 0.0.9\n"
+)
+
+func TestReadStamp_ReadsSiblingEngines(t *testing.T) {
+	for name, src := range map[string]string{
+		"carve-php line form":  stampFromPHP,
+		"carve-js line form":   stampFromJS,
+		"carve-php block form": stampBlockForm,
+	} {
+		stamp, ok, err := ReadStamp(src)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if !ok {
+			t.Fatalf("%s: expected a marker", name)
+		}
+		if stamp.Version != "0.1" {
+			t.Fatalf("%s: version = %q, want 0.1", name, stamp.Version)
+		}
+		if stamp.GeneratedBy == "" {
+			t.Fatalf("%s: expected a writer", name)
+		}
+	}
+}
+
+func TestReadStamp_UnstampedDocument(t *testing.T) {
+	_, ok, err := ReadStamp("# Hi\n\nNo marker here.\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok {
+		t.Fatal("an unstamped document must report no marker")
+	}
+}
+
+func TestReadStamp_UnrelatedTrailingCommentIsNotAMarker(t *testing.T) {
+	// Makes the check above able to fail for the right reason: "no marker" must
+	// mean no marker, not "parsing gave up".
+	_, ok, err := ReadStamp("# Hi\n\n%% just a note\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok {
+		t.Fatal("a plain trailing comment is not a provenance marker")
+	}
+}
+
+func TestNeedsReview(t *testing.T) {
+	cases := map[string]struct {
+		source string
+		want   bool
+	}{
+		"current version":  {stampFromPHP, false},
+		"older version":    {stampOld, true},
+		"unstamped":        {"# Hi\n", true},
+		"another engine's": {stampFromJS, false},
+	}
+	for name, c := range cases {
+		got, err := NeedsReview(c.source)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if got != c.want {
+			t.Fatalf("%s: NeedsReview = %v, want %v", name, got, c.want)
+		}
+	}
+}
+
+func TestStampModesDoNotRender(t *testing.T) {
+	// They answer a question ABOUT the document. Rendering here would mean a
+	// caller writing the report expecting markup, or the reverse.
+	stamp, ok, err := ReadStamp(stampFromPHP)
+	if err != nil || !ok {
+		t.Fatalf("err=%v ok=%v", err, ok)
+	}
+	if strings.Contains(stamp.Version, "<") || strings.Contains(stamp.GeneratedBy, "<") {
+		t.Fatalf("stamp carries markup: %+v", stamp)
+	}
+}
+
+func TestReadStamp_MarkerWithoutAWriter(t *testing.T) {
+	stamp, ok, err := ReadStamp("# Hi\n\n%% carve-version: 0.1\n")
+	if err != nil || !ok {
+		t.Fatalf("err=%v ok=%v", err, ok)
+	}
+	if stamp.GeneratedBy != "" {
+		t.Fatalf("GeneratedBy = %q, want empty for an unrecorded writer", stamp.GeneratedBy)
+	}
+}
