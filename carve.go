@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"context"
 	_ "embed"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -244,6 +245,56 @@ func ToHTMLOptionsContext(ctx context.Context, source string, opts Options) (str
 		return "", fmt.Errorf("carve: engine exited with code %d: %s", code, out.stderr)
 	}
 	return out.stdout, nil
+}
+
+// ParseAST parses Carve source and returns its AST as JSON.
+//
+// The PART 12 exchange shape (https://markup-carve.github.io/carve/ast-json):
+// the same tree every Carve engine publishes, so a consumer written against one
+// implementation reads another's output. The root carries exactly "type",
+// "children" and "srcByteLength"; frontmatter and footnote definitions are
+// block nodes inside "children", not root fields.
+//
+// Every node except the root carries "pos" when the engine could place it -
+// 1-based lines and columns, 0-based offsets, ends exclusive, counted in
+// Unicode CODEPOINTS, not bytes. A node the engine could not place, such as
+// reassembled table-cell text, carries no "pos" at all rather than an invented
+// one.
+//
+// json.RawMessage rather than a typed tree on purpose: the node set is spec
+// surface that grows, and a Go struct hierarchy would either lag it or force a
+// breaking change every time it does. Unmarshal into whatever shape the caller
+// actually needs.
+//
+// It uses context.Background(); prefer ParseASTContext for untrusted input, for
+// the same reason ToHTML does.
+func ParseAST(source string) (json.RawMessage, error) {
+	return ParseASTContext(context.Background(), source)
+}
+
+// ParseASTContext is ParseAST with a caller-supplied context that bounds the
+// per-call module execution.
+func ParseASTContext(ctx context.Context, source string) (json.RawMessage, error) {
+	eng, err := loadEngine()
+	if err != nil {
+		return nil, err
+	}
+
+	out, code, err := runEngine(ctx, eng, []string{"carve", "--json"}, source)
+	if err != nil {
+		return nil, err
+	}
+	if code != 0 {
+		return nil, fmt.Errorf("carve: engine exited with code %d: %s", code, out.stderr)
+	}
+	// Validated rather than returned raw: the engine writes the JSON, so invalid
+	// output means the embedded artifact is not what this module thinks it is -
+	// a stale .wasm predating --json answers with a usage error on stderr and an
+	// empty stdout, which would otherwise reach the caller as "valid" JSON.
+	if !json.Valid([]byte(out.stdout)) {
+		return nil, fmt.Errorf("carve: engine did not return JSON (stderr: %s)", out.stderr)
+	}
+	return json.RawMessage(out.stdout), nil
 }
 
 // engineOutput is what one engine invocation produced.
