@@ -15,9 +15,9 @@
 # is needed; we compile the `carve` bin directly to wasm32-wasip1.
 #
 # Pinned carve-rs revision used to generate the committed .wasm:
-#   branch main, commit 0e157ad81ee273af3038f7fa7213b451397fca67
-#   ("perf: drop the dead negative cache in the closer lookahead",
-#   carve-rs#330)
+#   branch main, commit 1f4317e41d35403054f18fe53664570d0473dbf7
+#   ("fix(ast-json): a footnote definition comes after the content, not before
+#   it", carve-rs#364)
 #
 # Keep this in step with the artifact. The CI "corpus" job runs the mandatory
 # spec corpus through the committed .wasm, so a rebuild that is forgotten shows
