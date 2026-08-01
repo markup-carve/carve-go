@@ -84,7 +84,32 @@ type Stamp struct {
 }
 ```
 
-### Stored documents and spec versions
+### The parsed AST
+
+`ParseAST` returns the document as JSON - the [PART 12 exchange
+shape](https://markup-carve.github.io/carve/ast-json), the same tree every Carve
+engine publishes, so a consumer written against one implementation reads
+another's output.
+
+```go
+raw, err := carve.ParseAST("# Title\n\nBody[^a].\n\n[^a]: note\n")
+// raw is json.RawMessage:
+// {"type":"document","children":[{"type":"heading",...}],"srcByteLength":34}
+```
+
+The root carries exactly `type`, `children` and `srcByteLength`; frontmatter and
+footnote definitions are block nodes inside `children`, not root fields. Every
+node except the root carries `pos` when the engine could place it - 1-based
+lines and columns, 0-based offsets, ends exclusive, counted in Unicode
+**codepoints**, not bytes. A node the engine could not place, such as
+reassembled table-cell text, carries no `pos` at all rather than an invented
+one.
+
+`json.RawMessage` rather than a typed tree on purpose: the node set is spec
+surface that grows, and a Go struct hierarchy would either lag it or force a
+breaking change every time it does. Unmarshal into whatever shape you need.
+
+## Stored documents and spec versions
 
 `carve fmt --stamp` (in any Carve engine) records the spec version a document was
 last processed under. carve-go reads that marker back, so a repository of stored
