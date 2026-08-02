@@ -15,9 +15,7 @@
 # is needed; we compile the `carve` bin directly to wasm32-wasip1.
 #
 # Pinned carve-rs revision used to generate the committed .wasm:
-#   branch main, commit 1f4317e41d35403054f18fe53664570d0473dbf7
-#   ("fix(ast-json): a footnote definition comes after the content, not before
-#   it", carve-rs#364)
+#   branch main, commit 68f985f33324e5bbce60f2695d3d53d9a77392bc
 #
 # Keep this in step with the artifact. The CI "corpus" job runs the mandatory
 # spec corpus through the committed .wasm, so a rebuild that is forgotten shows
@@ -29,7 +27,7 @@
 # CARVE_RS defaults to the sibling checkout used during development. For a
 # reproducible build, clone the pinned revision and point CARVE_RS at it:
 #   git clone https://github.com/markup-carve/carve-rs /tmp/carve-rs-static
-#   git -C /tmp/carve-rs-static checkout cffca30d91537487fe464aafebd95740eb74e936
+#   git -C /tmp/carve-rs-static checkout 68f985f33324e5bbce60f2695d3d53d9a77392bc
 #   CARVE_RS=/tmp/carve-rs-static ./build-wasm.sh
 set -euo pipefail
 

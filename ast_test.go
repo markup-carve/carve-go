@@ -115,26 +115,65 @@ func TestParseASTPositionsAreCodepoints(t *testing.T) {
 }
 
 func TestParseASTOmitsASpanItCannotPlace(t *testing.T) {
-	// Section 4: "MUST NOT emit pos with invented values". A cell's text is
-	// reassembled - the parser unescapes `\|` on the way in - so it is not a
-	// verbatim slice and carries no span, while the cell around it does.
-	doc := parse(t, "| a | b |\n|---|---|\n| c | d |\n")
-	var table struct {
-		Rows []struct {
-			Cells []node `json:"cells"`
-		} `json:"rows"`
-	}
-	raw, _ := json.Marshal(doc.Children[0])
-	if err := json.Unmarshal(raw, &table); err != nil {
-		t.Fatalf("unmarshal table: %v", err)
-	}
-	cell := table.Rows[0].Cells[0]
+	// Section 4: "MUST NOT emit pos with invented values". The engine refuses a
+	// span only where no source range holds the text.
+	//
+	// A `+` line continues the cell above it, and the two halves are joined by
+	// a MANUFACTURED space: the source has a line break there, so that space
+	// selects nothing and carries no position. The halves on either side are
+	// verbatim slices and do carry one.
+	//
+	// This used to assert that a plain cell's text was unplaceable, on the
+	// grounds that unescaping `\|` reassembles it. That stopped being true -
+	// an escaped pipe now splits into `text` / `escaped_text` / `text`, each a
+	// verbatim slice with its own span, so a cell with no escape at all was
+	// never reassembled in the first place.
+	doc := parse(t, "|= H |\n| a |\n+ b |\n")
 
-	if cell.Pos == nil {
-		t.Error("a table cell is a slice of the source and should carry a position")
+	var placed []string
+	var unplaced int
+	var walk func(n node)
+	walk = func(n node) {
+		if n.Type == "text" {
+			if n.Pos == nil {
+				unplaced++
+			} else {
+				placed = append(placed, n.Value)
+			}
+		}
+		for _, c := range n.Children {
+			walk(c)
+		}
+		// A table keeps its cells under `rows`, not `children`, so the walk has
+		// to step through them explicitly or it never reaches a cell's text.
+		if len(n.Rows) > 0 {
+			var rows []struct {
+				Cells []node `json:"cells"`
+			}
+			if err := json.Unmarshal(n.Rows, &rows); err != nil {
+				t.Fatalf("unmarshal rows: %v", err)
+			}
+			for _, row := range rows {
+				for _, cell := range row.Cells {
+					walk(cell)
+				}
+			}
+		}
 	}
-	if cell.Children[0].Pos != nil {
-		t.Errorf("reassembled cell text carries a position: %+v", *cell.Children[0].Pos)
+	for _, child := range doc.Children {
+		raw, _ := json.Marshal(child)
+		var n node
+		if err := json.Unmarshal(raw, &n); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		walk(n)
+	}
+
+	if unplaced != 1 {
+		t.Errorf("unplaced text nodes = %d, want exactly the manufactured joiner", unplaced)
+	}
+	if len(placed) == 0 {
+		t.Error("every verbatim half of a continued cell should carry a position")
 	}
 }
 
