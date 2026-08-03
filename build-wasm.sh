@@ -14,21 +14,24 @@
 # Because the existing CLI already does stdin -> HTML stdout, no wrapper crate
 # is needed; we compile the `carve` bin directly to wasm32-wasip1.
 #
-# Pinned carve-rs revision used to generate the committed .wasm:
-#   branch main, commit 68f985f33324e5bbce60f2695d3d53d9a77392bc
+# The carve-rs revision the committed .wasm was built from is recorded in
+# internal/wasm/REV, which THIS SCRIPT writes - a comment here would only say
+# what someone remembered to type. CI reads that file, checks the revision is
+# a real carve-rs commit on main, and reports how far behind main it is, so the
+# lag is legible instead of invisible.
 #
-# Keep this in step with the artifact. The CI "corpus" job runs the mandatory
-# spec corpus through the committed .wasm, so a rebuild that is forgotten shows
-# up as corpus mismatches rather than as silently stale output.
+# The CI "corpus" job additionally runs the mandatory spec corpus through the
+# committed .wasm, so a rebuild that is forgotten shows up as corpus mismatches
+# rather than as silently stale output. REV says how stale; the corpus says
+# whether it matters yet.
 #
 # Usage:
 #   CARVE_RS=/path/to/carve-rs ./build-wasm.sh
 #
-# CARVE_RS defaults to the sibling checkout used during development. For a
-# reproducible build, clone the pinned revision and point CARVE_RS at it:
-#   git clone https://github.com/markup-carve/carve-rs /tmp/carve-rs-static
-#   git -C /tmp/carve-rs-static checkout 68f985f33324e5bbce60f2695d3d53d9a77392bc
-#   CARVE_RS=/tmp/carve-rs-static ./build-wasm.sh
+# CARVE_RS defaults to the sibling checkout used during development, which only
+# exists on one machine. Anywhere else, clone carve-rs and point CARVE_RS at it:
+#   git clone https://github.com/markup-carve/carve-rs /tmp/carve-rs-build
+#   CARVE_RS=/tmp/carve-rs-build ./build-wasm.sh
 set -euo pipefail
 
 CARVE_RS="${CARVE_RS:-/media/mark/data/work/git/carve-rs}"
@@ -60,8 +63,19 @@ if [ ! -f "${WASM}" ]; then
   exit 1
 fi
 
+# Record WHICH carve-rs produced the bytes, in the same step that produces
+# them, so the record cannot drift from the artifact. A dirty or detached
+# checkout would make the recorded revision a lie, so refuse both rather than
+# write something unverifiable.
+REV="$(git -C "${CARVE_RS}" rev-parse HEAD)"
+if [ -n "$(git -C "${CARVE_RS}" status --porcelain)" ]; then
+  echo "error: ${CARVE_RS} has uncommitted changes; ${REV} would not describe this build" >&2
+  exit 1
+fi
+
 mkdir -p "${HERE}/internal/wasm"
 cp "${WASM}" "${OUT}"
+echo "${REV}" > "${HERE}/internal/wasm/REV"
 
-echo "wrote ${OUT}"
+echo "wrote ${OUT} from carve-rs ${REV}"
 ls -la "${OUT}"

@@ -268,15 +268,25 @@ module needs:
 - appends a single trailing newline if the output lacks one,
 - accepts `--static` and `--extensions` for the static render mode above.
 
-The committed `.wasm` is built from carve-rs branch `main`, commit
-`1f4317e41d35403054f18fe53664570d0473dbf7` (the full Tier-3 extension set; the
-crate is published as `carve-lang` but the CLI binary embedded here is `carve`).
+The carve-rs revision the committed `.wasm` was built from is recorded in
+[`internal/wasm/REV`](internal/wasm/REV). `build-wasm.sh` writes that file in
+the same step that produces the bytes, and refuses to write it at all if the
+carve-rs checkout is dirty - so the record cannot drift from the artifact the
+way a hand-maintained comment does. (The crate is published as `carve-lang`,
+but the CLI binary embedded here is `carve`.)
+
+CI reads that file in the `engine-rev` job. It **fails** when the revision is
+not a real commit on carve-rs `main` - a typo, a local-only build, a
+force-pushed branch - and it reports how many commits behind `main` the engine
+is as a **warning**, since carve-rs merging something is not a defect in this
+repository.
 
 Because the artifact is prebuilt, it can fall behind the spec with no change in
 this repository - and it did, until the corpus job below started catching it. CI
 runs the mandatory spec corpus through the **committed** `.wasm` and requires
 byte-identical HTML, so a forgotten rebuild fails a build instead of quietly
-shipping different output. Locally:
+shipping different output. `REV` says how stale the engine is; the corpus says
+whether that staleness has started to matter. Locally:
 
 ```bash
 CARVE_SPEC_CORPUS=/path/to/carve/tests/corpus go test -run TestSpecCorpus ./...
@@ -304,18 +314,18 @@ the shipped artifact. The `.gitignore` deliberately does not ignore it.
 
 ### Pinning the engine version when publishing
 
-During local development `build-wasm.sh` uses a local checkout of carve-rs (a
-path dependency). For a published, reproducible build, pin a specific carve-rs
-revision. For example, clone a tagged release and point `CARVE_RS` at it:
+`CARVE_RS` defaults to a sibling checkout that only exists on one developer's
+machine, so anywhere else point it at a clone. For a published build, check out
+the revision you want to ship first:
 
 ```bash
 git clone https://github.com/markup-carve/carve-rs /tmp/carve-rs
-git -C /tmp/carve-rs checkout cffca30d91537487fe464aafebd95740eb74e936
+git -C /tmp/carve-rs checkout <revision>
 CARVE_RS=/tmp/carve-rs ./build-wasm.sh
 ```
 
-Record the carve-rs commit/tag used to generate the committed `.wasm` in your
-release notes so the artifact is reproducible.
+`build-wasm.sh` writes that revision to `internal/wasm/REV`, so the artifact
+identifies itself and release notes do not have to carry the sha by hand.
 
 ## Testing
 
