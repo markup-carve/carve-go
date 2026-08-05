@@ -5,6 +5,18 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # The corpus job below is the only check that can tell a drifted engine from
+  # a current one, and it can start failing without a single commit here: the
+  # SPEC moves, the embedded wasm does not, and a push-triggered run reports
+  # the state of the day someone last touched this repo. This repository sat
+  # green for two days while 36 of 610 corpus documents rendered wrongly,
+  # because nothing had pushed since the drift began.
+  #
+  # This one GATES rather than reports. A corpus divergence is not upstream
+  # being ahead, it is this artifact rendering documents wrongly today.
+  schedule:
+    - cron: "35 6 * * *"
+  workflow_dispatch:
 
 jobs:
   build-test:
