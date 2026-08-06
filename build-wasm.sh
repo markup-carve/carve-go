@@ -46,17 +46,19 @@ fi
 # Ensure the WASI target is installed.
 rustup target add wasm32-wasip1
 
-# Build the carve CLI for WASI.
-( cd "${CARVE_RS}" && cargo build --release --target wasm32-wasip1 --bin carve )
-
-# Ask cargo where it actually put the artifact instead of assuming
-# $CARVE_RS/target. A shared CARGO_TARGET_DIR (a global config, a workspace, or
-# the env var) moves it elsewhere, and the old hard-coded path then failed the
-# copy AFTER a successful two-minute build - which reads like a build failure and
-# leaves the previous .wasm silently in place.
-TARGET_DIR="$(cd "${CARVE_RS}" && cargo metadata --format-version 1 --no-deps \
-  | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')"
-WASM="${TARGET_DIR:-${CARVE_RS}/target}/wasm32-wasip1/release/carve.wasm"
+# THE BUILD GETS ITS OWN TARGET DIRECTORY, and this is not a tidiness
+# preference. carve-rs checkouts on the development machine symlink `target` to
+# one SHARED cargo directory, and cargo keyed a wasm32-wasip1 artifact there by
+# package name and version - so a build from a second checkout of the same
+# package handed back the FIRST checkout's bytes. Measured: after this script
+# ran once against a checkout sitting on an unmerged branch, a second run
+# against `main` reported success, wrote a REV naming `main`, and copied the
+# branch's artifact. The corpus job caught it (one document diverging), which is
+# exactly the job it exists to do - but REV said something untrue in the
+# meantime, and REV is what the staleness report reads.
+BUILD_DIR="${TMPDIR:-/tmp}/carve-go-wasm-target"
+( cd "${CARVE_RS}" && CARGO_TARGET_DIR="${BUILD_DIR}" cargo build --release --target wasm32-wasip1 --bin carve )
+WASM="${BUILD_DIR}/wasm32-wasip1/release/carve.wasm"
 
 if [ ! -f "${WASM}" ]; then
   echo "error: built artifact not found at ${WASM}" >&2
@@ -70,6 +72,19 @@ fi
 REV="$(git -C "${CARVE_RS}" rev-parse HEAD)"
 if [ -n "$(git -C "${CARVE_RS}" status --porcelain)" ]; then
   echo "error: ${CARVE_RS} has uncommitted changes; ${REV} would not describe this build" >&2
+  exit 1
+fi
+
+# ...and it has to be a revision that EXISTS for anyone else. A clean checkout
+# sitting on an unmerged branch passes the test above and produces an artifact
+# nobody can reproduce from main; CI then fails the REV check, one job later and
+# one repository away from the cause. The default CARVE_RS is a development
+# checkout that is routinely on a branch, so this is the normal accident, not a
+# far-fetched one - it happened while bumping the pin for carve-rs#718.
+git -C "${CARVE_RS}" fetch --quiet origin main || true
+if ! git -C "${CARVE_RS}" merge-base --is-ancestor "${REV}" origin/main 2>/dev/null; then
+  echo "error: ${REV} is not on carve-rs main (${CARVE_RS} is on $(git -C "${CARVE_RS}" rev-parse --abbrev-ref HEAD))." >&2
+  echo "       The embedded artifact must be reproducible from main; check out main there first." >&2
   exit 1
 fi
 
