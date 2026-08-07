@@ -286,10 +286,16 @@ this repository - and it did, until the corpus job below started catching it. CI
 runs the mandatory spec corpus through the **committed** `.wasm` and requires
 byte-identical HTML, so a forgotten rebuild fails a build instead of quietly
 shipping different output. `REV` says how stale the engine is; the corpus says
-whether that staleness has started to matter. Locally:
+whether that staleness has started to matter.
+
+The same job drives the corpus through `ParseAST` as well, so a node type or a
+schema field name an engine rebuild drops is caught even where the rendered HTML
+is unchanged. Locally, and **without a `-run` filter** - the two AST checks are
+gated by the same variable, so filtering by name is how they came to run
+nowhere:
 
 ```bash
-CARVE_SPEC_CORPUS=/path/to/carve/tests/corpus go test -run TestSpecCorpus ./...
+CARVE_SPEC_CORPUS=/path/to/carve/tests/corpus go test ./...
 ```
 
 Because the existing CLI already does stdin to HTML stdout, **no wrapper crate
