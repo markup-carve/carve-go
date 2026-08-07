@@ -92,5 +92,24 @@ mkdir -p "${HERE}/internal/wasm"
 cp "${WASM}" "${OUT}"
 echo "${REV}" > "${HERE}/internal/wasm/REV"
 
+# Record the artifact's digest in the same step, so REV DESCRIBES the binary
+# instead of merely sitting beside it. Without this, CI can assert that REV
+# names a real commit on main and nothing at all about the bytes it is supposed
+# to explain, and asserting that pairing with neither a rebuild nor a digest
+# would be a check that cannot fail (markup-carve/carve#755).
+#
+# What it buys, precisely: a carve.wasm swapped in, truncated, or committed from
+# any build other than this one fails CI, because its hash no longer matches.
+# What it does NOT buy: a REV hand-edited on its own still passes, since nothing
+# ties the revision to the digest cryptographically. Closing that would need CI
+# to rebuild from REV and compare, which needs the full Rust and WASI toolchain
+# in the job, and the build is not byte-reproducible across checkout paths
+# anyway. The three files are written together here; that is the guarantee.
+#
+# The `cd` keeps the path in the file relative, so `sha256sum -c` works from
+# internal/wasm/ rather than only from wherever this script happened to run.
+( cd "${HERE}/internal/wasm" && sha256sum carve.wasm > carve.wasm.sha256 )
+
 echo "wrote ${OUT} from carve-rs ${REV}"
+cat "${HERE}/internal/wasm/carve.wasm.sha256"
 ls -la "${OUT}"

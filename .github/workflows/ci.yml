@@ -72,18 +72,40 @@ jobs:
         run: go test -v ./...
 
   # The embedded wasm is a committed binary, so nothing in a diff says which
-  # engine it is. internal/wasm/REV records that, written by build-wasm.sh in
-  # the same step that produces the bytes. This job makes the record legible:
-  # it fails when the revision is not a real commit on carve-rs main (a typo, a
-  # local-only build, a force-pushed branch), and it reports the lag behind main
-  # as a warning rather than a failure - carve-rs merging something is not a
-  # defect in this repository, and the corpus job above is what says whether the
-  # lag has started to matter.
+  # engine it is. internal/wasm/REV records that, and internal/wasm/carve.wasm.sha256
+  # records what the bytes beside it hash to - both written by build-wasm.sh in
+  # the same step that produces them.
+  #
+  # This used to be an inline script here, and it was the only pin measurement
+  # in the org, which is why the shared reader in carve-rs is generalized from
+  # it. Calling that reader instead of keeping a sixth copy of the rule is the
+  # point: the rule lives in one place and every binding inherits it.
+  #
+  # Two deliberate changes from the inline version it replaces:
+  #
+  #  - the lag no longer emits `::warning::`. A warning annotation cannot fail a
+  #    job, and this repository is the proof that that is not enough: it carried
+  #    a lag warning throughout and was still the binding furthest behind, with
+  #    a green scheduled run. The lag is now printed as a plain number and
+  #    `--max-age-days` gates on AGE instead. Age rather than commit count,
+  #    because carve-rs merges continuously: a count-based gate is red from the
+  #    moment any PR opens there and unclearable by the action it recommends,
+  #    whereas a pin older than N days is cleared by rebuilding.
+  #
+  #  - an abbreviated or upper-case revision is now refused rather than
+  #    accepted. It resolves locally and then matches nothing.
+  #
+  # --artifact/--artifact-digest is what makes REV describe the binary rather
+  # than merely accompany it. The guard makes that assertion ONLY when a digest
+  # is supplied, because asserting the pairing without one would be a check that
+  # cannot fail - see build-wasm.sh for what the digest does and does not buy.
   engine-rev:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
+      # fetch-depth: 0 is required. The guard runs `merge-base --is-ancestor`
+      # against main, which needs the history to be there.
       - name: Check out carve-rs
         uses: actions/checkout@v4
         with:
@@ -91,25 +113,15 @@ jobs:
           path: carve-rs
           fetch-depth: 0
 
+      # --max-age-days 14: this repository has rebuilt the embedded wasm every
+      # one to two days since it started recording REV, so fourteen is several
+      # times the observed cadence - wide enough that a quiet fortnight is not a
+      # false alarm, tight enough to catch the state this repository was
+      # actually in when the class was filed.
       - name: Check the recorded engine revision
         run: |
-          set -euo pipefail
-          if [ ! -f internal/wasm/REV ]; then
-            echo "::error::internal/wasm/REV is missing; run ./build-wasm.sh to record which carve-rs the embedded wasm came from"
-            exit 1
-          fi
-          rev="$(tr -d '[:space:]' < internal/wasm/REV)"
-          if ! git -C carve-rs cat-file -e "${rev}^{commit}" 2>/dev/null; then
-            echo "::error::internal/wasm/REV names ${rev}, which is not a commit in carve-rs"
-            exit 1
-          fi
-          if ! git -C carve-rs merge-base --is-ancestor "${rev}" origin/main; then
-            echo "::error::carve-rs ${rev} is not on main, so the embedded engine came from an unmerged or rewritten branch"
-            exit 1
-          fi
-          behind="$(git -C carve-rs rev-list --count "${rev}..origin/main")"
-          echo "embedded engine: carve-rs ${rev} ($(git -C carve-rs log -1 --format=%s "${rev}"))"
-          echo "carve-rs main is ${behind} commit(s) ahead"
-          if [ "${behind}" -gt 0 ]; then
-            echo "::warning::the embedded wasm is ${behind} carve-rs commit(s) behind main; run ./build-wasm.sh to refresh it"
-          fi
+          python3 carve-rs/tools/check-engine-pin.py \
+            --engine carve-rs --github --max-age-days 14 \
+            --form rev-file --file internal/wasm/REV \
+            --artifact internal/wasm/carve.wasm \
+            --artifact-digest internal/wasm/carve.wasm.sha256
