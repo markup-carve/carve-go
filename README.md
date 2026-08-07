@@ -269,17 +269,35 @@ module needs:
 - accepts `--static` and `--extensions` for the static render mode above.
 
 The carve-rs revision the committed `.wasm` was built from is recorded in
-[`internal/wasm/REV`](internal/wasm/REV). `build-wasm.sh` writes that file in
-the same step that produces the bytes, and refuses to write it at all if the
-carve-rs checkout is dirty - so the record cannot drift from the artifact the
-way a hand-maintained comment does. (The crate is published as `carve-lang`,
-but the CLI binary embedded here is `carve`.)
+[`internal/wasm/REV`](internal/wasm/REV), and what those bytes hash to in
+`internal/wasm/carve.wasm.sha256`. `build-wasm.sh` writes both in the same step
+that produces the artifact, and refuses to write anything at all if the carve-rs
+checkout is dirty - so the record cannot drift from the artifact the way a
+hand-maintained comment does. (The crate is published as `carve-lang`, but the
+CLI binary embedded here is `carve`.)
 
-CI reads that file in the `engine-rev` job. It **fails** when the revision is
-not a real commit on carve-rs `main` - a typo, a local-only build, a
-force-pushed branch - and it reports how many commits behind `main` the engine
-is as a **warning**, since carve-rs merging something is not a defect in this
-repository.
+CI reads all three in the `engine-rev` job, through the shared reader carve-rs
+ships at `tools/check-engine-pin.py`. The rule lives there rather than here, so
+every binding that pins this engine inherits it instead of spelling it out
+again. The job **fails** when the revision is missing, is not 40 lowercase hex,
+is not a real commit, is not an ancestor of `main`, or when the committed
+`.wasm` does not hash to the recorded digest.
+
+The lag behind `main` is **printed as a number and never gates**. A commit-count
+gate would be red from the moment any PR opens in carve-rs and unclearable by
+the action it recommends, so `--max-age-days` gates on age instead, which is
+what rebuilding clears. This replaced a `::warning::` annotation, which could
+not fail a job at all - and this repository is the evidence that a warning is
+not enough, having carried one throughout while being the binding furthest
+behind, with a green scheduled run.
+
+What the digest buys, precisely: a `carve.wasm` swapped in, truncated, or
+committed from any build other than the one that wrote the digest fails CI. What
+it does not buy: a `REV` hand-edited on its own still passes, because nothing
+ties the revision to the digest cryptographically. Closing that would need CI to
+rebuild from `REV` and compare, which needs the full Rust and WASI toolchain in
+the job, and the build is not byte-reproducible across checkout paths anyway.
+The three files being written together is the guarantee.
 
 Because the artifact is prebuilt, it can fall behind the spec with no change in
 this repository - and it did, until the corpus job below started catching it. CI
@@ -330,8 +348,10 @@ git -C /tmp/carve-rs checkout <revision>
 CARVE_RS=/tmp/carve-rs ./build-wasm.sh
 ```
 
-`build-wasm.sh` writes that revision to `internal/wasm/REV`, so the artifact
-identifies itself and release notes do not have to carry the sha by hand.
+`build-wasm.sh` writes that revision to `internal/wasm/REV` and the artifact's
+digest to `internal/wasm/carve.wasm.sha256`, so the artifact identifies itself
+and release notes do not have to carry the sha by hand. Commit all three
+together; CI checks the digest against the committed bytes.
 
 ## Testing
 
