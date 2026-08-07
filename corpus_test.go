@@ -63,9 +63,11 @@ func TestSpecCorpus(t *testing.T) {
 
 	// Without this, an empty or wrong directory would report zero mismatches
 	// and pass -- the exact shape of check that let the stale artifact through.
-	if total < 400 {
-		t.Fatalf("only %d corpus pairs found in %s; the corpus has ~500, so this is a wiring problem, not a clean run", total, dir)
-	}
+	// It used to be `total < 400` against a corpus of 830, which passed over a
+	// corpus missing half its documents; see corpus_population_test.go for what
+	// replaced it and why the reference is the spec's example pages rather than
+	// a number recorded here.
+	requireWholeCorpus(t, dir, total, "corpus pairs compared")
 
 	sort.Strings(mismatches)
 	if len(mismatches) > 0 {
