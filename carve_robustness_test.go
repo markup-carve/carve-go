@@ -4,17 +4,83 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
 
-// slowInput is a Carve source whose full parse reliably out-runs the short
-// per-call deadline used below, so it exercises deadline interruption of
-// CPU-bound guest code. Each "[a](" opens a link destination the parser keeps
-// scanning for; the engine handles this in linear time (an earlier O(n^2) was
-// fixed upstream), so the size is chosen to keep the uninterrupted parse well
-// above the 50ms deadline (~0.5s here) rather than relying on quadratic blowup.
-func slowInput() string { return strings.Repeat("[a](", 100000) }
+// slowInput is a Carve source whose full parse takes long enough to be cut in
+// half, so it exercises deadline interruption of CPU-bound guest code. Each
+// "[a](" opens a link destination the parser keeps scanning for; the engine
+// handles this in linear time (an earlier O(n^2) was fixed upstream), so the
+// parse cost is linear in this repeat count.
+//
+// The count no longer has to clear an absolute deadline. It used to: the
+// deadline was a fixed 50ms and the comment here claimed the parse took ~0.5s,
+// which had stopped being true (measured 0.09s at the previous count of
+// 100000, i.e. under twice the deadline). Both the deadline and the ceiling are
+// now fractions of a MEASURED parse - see uninterruptedParse - so the only
+// thing this count controls is how much absolute room the fractions have on a
+// loaded machine.
+func slowInput() string { return strings.Repeat("[a](", 300000) }
+
+// uninterruptedParse is how long slowInput takes to render with no deadline, on
+// THIS machine, measured once per test binary.
+//
+// The interruption tests below are about a proportion - did the call return
+// because it was cut short, or because it ran to completion - and that question
+// has no wall-clock answer. It used to be asked as `elapsed > 20*time.Second`,
+// against work that takes a tenth of a second: a ceiling 200 times the length
+// of the run it bounds cannot fail, so it never once distinguished the two
+// cases it was written to distinguish. Measuring the completion time and
+// comparing against a fraction of it asks the real question, and asks it the
+// same way on a fast laptop, a contended CI runner, and under -race (where this
+// input measures roughly three times slower and every fraction moves with it).
+var (
+	uninterruptedOnce sync.Once
+	uninterruptedFull time.Duration
+	uninterruptedErr  error
+)
+
+func uninterruptedParse(t *testing.T) time.Duration {
+	t.Helper()
+	uninterruptedOnce.Do(func() {
+		// Warm first: a cold start would charge the one-time wasm compile to
+		// the baseline and inflate every fraction derived from it.
+		if _, err := ToHTMLContext(context.Background(), "# warm"); err != nil {
+			uninterruptedErr = err
+			return
+		}
+		start := time.Now()
+		_, uninterruptedErr = ToHTMLContext(context.Background(), slowInput())
+		uninterruptedFull = time.Since(start)
+	})
+	if uninterruptedErr != nil {
+		t.Fatalf("measuring the uninterrupted parse failed: %v", uninterruptedErr)
+	}
+	return uninterruptedFull
+}
+
+// requireCutShort is the assertion both interruption tests share: the call came
+// back well before the same work would have finished on its own.
+//
+// Half is a deliberately loose fraction. Interruption lands at about an eighth
+// of the parse (the deadline requireCutShort's callers use), so a run has to be
+// four times slower than expected before this reports, which is the margin that
+// keeps a proportion assertion from becoming a flakiness source on a shared
+// runner.
+func requireCutShort(t *testing.T, elapsed time.Duration, what string) {
+	t.Helper()
+	full := uninterruptedParse(t)
+	// Logged rather than only asserted: the two numbers are what someone
+	// debugging a failure here needs, and a reader of a -v run can see the
+	// margin the fraction is actually running with on that machine.
+	t.Logf("returned in %v; the same render with no deadline takes %v", elapsed, full)
+	if elapsed >= full/2 {
+		t.Fatalf("%s: the call took %v, and the same render with no deadline takes %v on this "+
+			"machine. It was not cut short, it very nearly ran to completion.", what, elapsed, full)
+	}
+}
 
 // warmEngine forces the one-time, relatively expensive wasm compilation to
 // happen now, on a context with no deadline. Tests that assert render
@@ -37,12 +103,17 @@ func warmEngine(t *testing.T) {
 // test would block for the full run time before failing.
 func TestToHTMLContext_DeadlineInterrupts(t *testing.T) {
 	// Pay the wasm compile cost up front so the deadline below bounds only the
-	// render, never the cold-start compilation (see warmEngine).
+	// render, never the cold-start compilation (see warmEngine). Measuring the
+	// baseline warms it too; both are here because the order matters and only
+	// one of them says so.
 	warmEngine(t)
+	full := uninterruptedParse(t)
 
 	src := slowInput()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	// An eighth of the measured parse, so the deadline is short relative to the
+	// work on any machine rather than short in milliseconds on one of them.
+	ctx, cancel := context.WithTimeout(context.Background(), full/8)
 	defer cancel()
 
 	start := time.Now()
@@ -56,14 +127,8 @@ func TestToHTMLContext_DeadlineInterrupts(t *testing.T) {
 		t.Fatalf("expected errors.Is(err, context.DeadlineExceeded), got %v", err)
 	}
 	// The whole point of the fix: the call returns because it was interrupted,
-	// not because it ran to completion. The uninterrupted parse of this input is
-	// ~0.5s natively (more under -race), well above the 50ms deadline; wazero's
-	// context-done check is periodic, so interrupt latency varies with machine
-	// load (and is larger under -race). A 20s ceiling unambiguously proves the
-	// run was cut short rather than completed, while tolerating that jitter.
-	if elapsed > 20*time.Second {
-		t.Fatalf("deadline did not interrupt: took %v (uninterrupted run is far longer)", elapsed)
-	}
+	// not because it ran to completion.
+	requireCutShort(t, elapsed, "the deadline did not interrupt")
 }
 
 // TestToHTMLContext_CanceledInterrupts asserts an already-canceled context is
@@ -86,11 +151,7 @@ func TestToHTMLContext_CanceledInterrupts(t *testing.T) {
 	if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("expected a context error, got %v", err)
 	}
-	// See the latency note in TestToHTMLContext_DeadlineInterrupts: the ceiling
-	// proves interruption, not completion, with headroom for -race jitter.
-	if elapsed > 20*time.Second {
-		t.Fatalf("cancellation did not interrupt: took %v", elapsed)
-	}
+	requireCutShort(t, elapsed, "cancellation did not interrupt")
 }
 
 // TestToHTML_NoDeadlineStillCompletes guards that the hardened runtime does not

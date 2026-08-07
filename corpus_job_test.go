@@ -60,7 +60,8 @@ func corpusGatedTests(t *testing.T) []string {
 						// One of this package's corpus helpers, each of which
 						// reaches corpusDocuments and so inherits its skip.
 						switch fun.Name {
-						case "corpusDocuments", "corpusTrees", "producedNodeTypes", "schemaDefinitions":
+						case "corpusDocuments", "corpusTrees", "producedNodeTypes", "schemaDefinitions",
+							"requireWholeCorpus", "declaredCorpusSize":
 							gated = true
 						}
 					case *ast.SelectorExpr:
@@ -84,10 +85,22 @@ func corpusGatedTests(t *testing.T) []string {
 			}
 		}
 	}
-	// The ablation: this package has three corpus-gated tests, so a scan that
-	// finds fewer is reading nothing rather than reporting a clean result.
-	if len(names) < 3 {
-		t.Fatalf("found only %d corpus-gated test(s) (%s); this package has three, so the scan is not reading the sources",
+	// The ablation, so a scan that read nothing cannot report a clean result.
+	// It used to be `len(names) < 3` with "this package has three" written
+	// beside it - correct on the day, and a fourth corpus-gated test would have
+	// left it correct and useless. Anchoring on a test whose corpus dependence
+	// is definitional says the same thing without a number to maintain:
+	// TestSpecCorpus reads CARVE_SPEC_CORPUS in its first statement, so a scan
+	// that misses it is not reading the sources.
+	found := false
+	for _, name := range names {
+		if name == "TestSpecCorpus" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("the scan found %d corpus-gated test(s) (%s) and TestSpecCorpus was not among them; "+
+			"that test reads CARVE_SPEC_CORPUS directly, so the scan is not reading the sources",
 			len(names), strings.Join(names, ", "))
 	}
 	return names

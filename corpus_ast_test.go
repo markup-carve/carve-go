@@ -72,10 +72,11 @@ func corpusDocuments(t *testing.T) []string {
 	sort.Strings(paths)
 	// Without this an empty or mistyped directory yields no documents, every
 	// assertion below is vacuous, and the run reads as clean - the same failure
-	// shape these tests exist to remove.
-	if len(paths) < 400 {
-		t.Fatalf("only %d corpus documents under %s; the corpus has ~650, so this is a wiring problem, not a clean run", len(paths), dir)
-	}
+	// shape these tests exist to remove. This was the second of two literals
+	// spelling that rule in this package, and the two did not even agree on the
+	// size of the corpus ("~650" here, "~500" there, against an actual 830).
+	// One spelling now, in corpus_population_test.go.
+	requireWholeCorpus(t, dir, len(paths), "corpus documents listed")
 	return paths
 }
 
@@ -167,8 +168,21 @@ func schemaDefinitions(t *testing.T) map[string]any {
 	if err := json.Unmarshal(blob, &schema); err != nil {
 		t.Fatalf("decoding %s: %v", path, err)
 	}
-	if len(schema.Defs) < 40 {
-		t.Fatalf("the schema has only %d type definitions, which is too few to be the spec's", len(schema.Defs))
+	// A third literal floor ("< 40" against 63 definitions) used to stand here.
+	// Naming the types is both exact and staleness-proof: expectedNodeTypes is
+	// this repository's own record of what the language produces, the schema is
+	// the spec's, and neither is derived from the other - so a schema that lost
+	// a type fails here whatever its total size.
+	var undefined []string
+	for _, want := range expectedNodeTypes {
+		if _, ok := schema.Defs[want]; !ok {
+			undefined = append(undefined, want)
+		}
+	}
+	if len(undefined) > 0 {
+		t.Fatalf("%s defines no shape for %d of the %d node types this package records: %s. "+
+			"Either it is not the spec's schema, or a type was renamed and expectedNodeTypes "+
+			"has to move with it.", path, len(undefined), len(expectedNodeTypes), strings.Join(undefined, ", "))
 	}
 	return schema.Defs
 }
