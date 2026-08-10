@@ -1,0 +1,16 @@
+* text=auto eol=lf
+
+*.gif binary
+*.ico binary
+*.jpeg binary
+*.jpg binary
+*.pdf binary
+*.png binary
+*.wasm binary
+*.webp binary
+
+/.github export-ignore
+/.gitattributes export-ignore
+/.gitignore export-ignore
+/build-wasm.sh export-ignore
+*_test.go export-ignore
