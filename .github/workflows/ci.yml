@@ -26,10 +26,10 @@ jobs:
       matrix:
         go-version: ['1.25.x', 'stable']
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ matrix.go-version }}
 
@@ -45,16 +45,16 @@ jobs:
   corpus:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Check out the spec corpus
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: markup-carve/carve
           path: spec
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: stable
 
@@ -102,12 +102,12 @@ jobs:
   engine-rev:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # fetch-depth: 0 is required. The guard runs `merge-base --is-ancestor`
       # against main, which needs the history to be there.
       - name: Check out carve-rs
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: markup-carve/carve-rs
           path: carve-rs
