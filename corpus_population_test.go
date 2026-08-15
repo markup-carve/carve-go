@@ -28,12 +28,21 @@ import (
 // markup-carve/pandoc-carve.
 //
 // So the reference is the corpus's SOURCE, not the corpus. tests/corpus is
-// generated from the `::: compare` blocks in docs/examples/{core,extensions,
-// edge-cases}.md (see tests/corpus/README.md and scripts/generate-corpus.mjs in
-// the spec repository); the generator refuses to write a corpus where the two
-// disagree. Both live in the same spec checkout CI already clones, one
-// directory away from CARVE_SPEC_CORPUS - the same route corpus_ast_test.go
-// already uses to read resources/ast-schema.json.
+// generated from the `::: compare` blocks in resources/examples/{core,
+// extensions,edge-cases}.md (see tests/corpus/README.md and
+// scripts/generate-corpus.mjs in the spec repository); the generator refuses to
+// write a corpus where the two disagree. Both live in the same spec checkout CI
+// already clones, one directory away from CARVE_SPEC_CORPUS - the same route
+// corpus_ast_test.go already uses to read resources/ast-schema.json.
+//
+// THE PAGES MOVED, AND THIS HELPER DID NOT. They lived under docs/examples/
+// until markup-carve/carve#1194 made them generated sources and filed them
+// beside the other generator inputs in resources/. Because the path is read at
+// run time and the miss is fatal, the corpus job stopped comparing anything at
+// all rather than comparing against a stale count - the right failure, but it
+// masked every real divergence behind it until the path moved too. The route
+// corpus_ast_test.go takes to resources/ast-schema.json is now the same route
+// this helper takes, which is one fewer place for the two to disagree.
 //
 // Counting the source rather than recording a number also means there is no
 // literal left to go stale: adding an example moves the expectation on the next
@@ -59,7 +68,7 @@ var compareMarkerRun = regexp.MustCompile(`^:{3,}`)
 // keeps the two counts equal by construction instead of by luck.
 func declaredCorpusSize(t *testing.T, corpusDir string) int {
 	t.Helper()
-	examplesDir := filepath.Join(corpusDir, "..", "..", "docs", "examples")
+	examplesDir := filepath.Join(corpusDir, "..", "..", "resources", "examples")
 	declared := 0
 	for _, page := range specExamplePages {
 		path := filepath.Join(examplesDir, page)
@@ -110,7 +119,7 @@ func requireWholeCorpus(t *testing.T, corpusDir string, got int, what string) {
 	declared := declaredCorpusSize(t, corpusDir)
 	if got != declared {
 		t.Fatalf("%s: %d, but the spec's example pages declare %d. Every ::: compare block in "+
-			"docs/examples/{core,extensions,edge-cases}.md becomes one corpus pair, so a difference "+
+			"resources/examples/{core,extensions,edge-cases}.md becomes one corpus pair, so a difference "+
 			"means the corpus at %s is not the one those pages describe - a truncated or stale "+
 			"checkout, a wrong CARVE_SPEC_CORPUS, or a corpus that needs regenerating "+
 			"(npm run corpus:build in the spec repository). It does not mean this run was clean.",
