@@ -65,7 +65,12 @@ func TestToHTML_Table(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ToHTML error: %v", err)
 	}
-	if !strings.Contains(out, "<table>") || !strings.Contains(out, "<th>A</th>") || !strings.Contains(out, "<td>1</td>") {
+	// A header cell carries scope="col". The expectation here used to be a bare
+	// <th>, which is what the engine emitted before the corpus grew the
+	// attribute; a hand-written expectation like this one is the part of the
+	// suite that cannot notice the artifact moving under it, which is why the
+	// corpus job exists beside it.
+	if !strings.Contains(out, "<table>") || !strings.Contains(out, `<th scope="col">A</th>`) || !strings.Contains(out, "<td>1</td>") {
 		t.Fatalf("expected table markup, got %q", out)
 	}
 }
@@ -116,29 +121,33 @@ type mismatchError struct{ out string }
 func (e *mismatchError) Error() string { return "unexpected output: " + e.out }
 
 // nativeCarveBin locates the native carve-rs CLI for byte-identical checks.
-// It is skipped (not failed) when the binary is unavailable, so the suite
-// still runs in environments without a carve-rs checkout.
+// It is skipped (not failed) when no binary is named, so the suite still runs
+// in environments without a carve-rs checkout - CI is one of them, and skips
+// this check on every run.
+//
+// CARVE_BIN IS THE ONLY ROUTE, and the reason is what this check asserts. It
+// says "the wasm renders what the native engine renders", which is a statement
+// about ONE engine revision: the native side has to be the revision
+// internal/wasm/REV names, or a mismatch says nothing about this module. The
+// helper used to fall back to two hardcoded target/ paths and then to `carve`
+// on PATH, none of which is that revision by construction - a long-lived
+// checkout's target/ holds whatever it last built, on whatever branch it was
+// on.
+//
+// It failed exactly that way while this rebuild was being prepared: a stale
+// local build predating the header cell growing scope="col" reported a byte
+// mismatch on tables against a wasm the corpus proved correct. A check that
+// picks its own reference off the filesystem cannot tell "the wasm is wrong"
+// from "the thing I found is old", and it reported the first. Skipping until a
+// caller vouches for a binary is the honest default; the corpus job, whose
+// reference is the spec, is the drift gate either way.
 func nativeCarveBin(t *testing.T) string {
 	t.Helper()
 	if env := os.Getenv("CARVE_BIN"); env != "" {
 		return env
 	}
-	candidates := []string{
-		// Static-capable checkout (proto/div-label-fallback, the engine the
-		// committed wasm is built from) is preferred so the static byte-check
-		// can run; fall back to a plain main checkout for the interactive check.
-		"/tmp/carve-rs-static/target/release/carve",
-		"/media/mark/data/work/git/carve-rs/target/release/carve",
-	}
-	for _, c := range candidates {
-		if _, err := os.Stat(c); err == nil {
-			return c
-		}
-	}
-	if p, err := exec.LookPath("carve"); err == nil {
-		return p
-	}
-	t.Skip("native carve binary not found; set CARVE_BIN to enable byte-identical check")
+	t.Skip("CARVE_BIN not set; build the carve CLI from the carve-rs revision in " +
+		"internal/wasm/REV and point CARVE_BIN at it to enable the byte-identical check")
 	return ""
 }
 
