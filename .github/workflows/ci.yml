@@ -206,14 +206,47 @@ jobs:
   #  - the lag no longer emits `::warning::`. A warning annotation cannot fail a
   #    job, and this repository is the proof that that is not enough: it carried
   #    a lag warning throughout and was still the binding furthest behind, with
-  #    a green scheduled run. The lag is now printed as a plain number and
-  #    `--max-age-days` gates on AGE instead. Age rather than commit count,
-  #    because carve-rs merges continuously: a count-based gate is red from the
-  #    moment any PR opens there and unclearable by the action it recommends,
-  #    whereas a pin older than N days is cleared by rebuilding.
+  #    a green scheduled run. The lag is now printed as a plain number.
   #
   #  - an abbreviated or upper-case revision is now refused rather than
   #    accepted. It resolves locally and then matches nothing.
+  #
+  # THE LAG IS NOT GATED HERE AT ALL, AND DELIBERATELY SO (carve-go#43).
+  #
+  # It briefly was, on AGE, at fourteen days. That number was chosen against an
+  # observed rebuild cadence of one to two days, so as a staleness gate it was
+  # an order of magnitude too loose, and it did not fire for the failure it
+  # existed to catch: measured during carve-go#42 the embedded artifact was 49
+  # commits behind and rendered 50 of 1131 corpus documents wrongly, and this
+  # step PASSED while a corpus run was what reported it.
+  #
+  # Tightening fourteen to three would have caught that one case and nothing
+  # more general, because AGE IS A PROXY and a bad one. carve-rs can merge ten
+  # commits that touch no rendering, or one commit that lands a container ruling
+  # and moves fifty documents. Commit distance is the same proxy with a
+  # different unit and the same defect - it is red from the moment any PR opens
+  # in carve-rs, unclearable by the action it recommends, and the predictable
+  # end state is someone raising the tolerance until it means nothing.
+  #
+  # corpus-drift asks the question directly instead - how many of the spec's
+  # documents does this artifact render wrongly today - and prints the number on
+  # every push, every pull request and the daily schedule. A proxy standing in
+  # for a measurement that is right there is worth deleting rather than
+  # recalibrating: a retuned number gets loosened again the next time it fires
+  # spuriously, and in the meantime its green reads as coverage.
+  #
+  # Note what is deliberately NOT claimed: corpus-drift does not block, so
+  # deleting this leaves no BLOCKING staleness signal. That is the same call
+  # carve-go#46 made about the corpus job itself, for the same reason. A pin can
+  # be old because carve-rs has not implemented a ruling yet, and no change in
+  # this repository clears that; a gate on it would be red for someone else's
+  # work, which is how a gate stops being read at all.
+  #
+  # What is left below are the assertions that HOLD AND CAN FAIL AT ZERO DRIFT,
+  # with the pin sitting exactly on carve-rs's tip - REV is present, well
+  # formed, a real commit, an ancestor of main, and hashes the artifact beside
+  # it. None of those is a proxy for staleness, and none of them stops asserting
+  # when the pin is healthy.
   #
   # --artifact/--artifact-digest is what makes REV describe the binary rather
   # than merely accompany it. The guard makes that assertion ONLY when a digest
@@ -233,15 +266,11 @@ jobs:
           path: carve-rs
           fetch-depth: 0
 
-      # --max-age-days 14: this repository has rebuilt the embedded wasm every
-      # one to two days since it started recording REV, so fourteen is several
-      # times the observed cadence - wide enough that a quiet fortnight is not a
-      # false alarm, tight enough to catch the state this repository was
-      # actually in when the class was filed.
+      # No --max-age-days. The lag is printed and not asserted on; see above.
       - name: Check the recorded engine revision
         run: |
           python3 carve-rs/tools/check-engine-pin.py \
-            --engine carve-rs --github --max-age-days 14 \
+            --engine carve-rs --github \
             --form rev-file --file internal/wasm/REV \
             --artifact internal/wasm/carve.wasm \
             --artifact-digest internal/wasm/carve.wasm.sha256
