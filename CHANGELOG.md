@@ -16,7 +16,7 @@ line of Go changing, so rebuilds get an entry of their own.
 - A list-valued URL attribute is probed at every candidate, not at its head
   (PART 9 §25, markup-carve/carve#1320). The sanitizer read only the leading
   scheme of the value, so `srcset="safe.png 1x, javascript:alert(1) 2x"` passed
-  on its second entry; `srcset`, `ping`, `imagesrcset` and `archive` are now
+  on its second entry; `srcset`, `imagesrcset`, `ping` and `attributionsrc` are now
   split and every candidate is read. The engine embedded in `v0.1.0` predates
   the fix, so the module published so far carries the defect.
 
