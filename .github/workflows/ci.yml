@@ -5,15 +5,15 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
-  # The corpus job below is the only check that can tell a drifted engine from
-  # a current one, and it can start failing without a single commit here: the
-  # SPEC moves, the embedded wasm does not, and a push-triggered run reports
-  # the state of the day someone last touched this repo. This repository sat
-  # green for two days while 36 of 610 corpus documents rendered wrongly,
-  # because nothing had pushed since the drift began.
+  # For corpus-drift. That job measures the embedded engine against spec MAIN,
+  # which moves without a single commit here, so a push-triggered run alone
+  # would report the state of the day someone last touched this repo. This
+  # repository sat green for two days while 36 of 610 corpus documents rendered
+  # wrongly, because nothing had pushed since the drift began.
   #
-  # This one GATES rather than reports. A corpus divergence is not upstream
-  # being ahead, it is this artifact rendering documents wrongly today.
+  # The blocking `corpus` job needs no schedule: every input it reads is pinned
+  # in this repository, so its answer cannot change while this repository does
+  # not.
   schedule:
     - cron: "35 6 * * *"
   workflow_dispatch:
@@ -39,18 +39,73 @@ jobs:
       - name: Test
         run: go test ./...
 
-  # The embedded wasm is a prebuilt artifact, so it can fall behind the spec
-  # without any change in this repository. Run the mandatory corpus through it
-  # so that drift fails a build instead of waiting to be noticed.
+  # The embedded wasm is a prebuilt artifact, so it can render the spec's
+  # documents wrongly with no change in this repository at all. Run the
+  # mandatory corpus through it so that a bad artifact fails a build.
+  #
+  # AGAINST THE SPEC COMMIT THE EMBEDDED ENGINE PINS, not against spec main.
+  # That difference is the whole of this job, so it is worth stating why.
+  #
+  # This used to check out markup-carve/carve at its default branch, which
+  # asks: is this artifact conformant with the spec as it stands right now?
+  # carve-go cannot answer yes to that by any change of its own. The spec adds
+  # documents continuously - 29 in one hour on 2026-08-18 - and an engine
+  # implements them some time later. In between, every pull request here is
+  # red for a reason that has nothing to do with its diff, and the fix lives in
+  # another repository. A gate in that state teaches every reader to skip it,
+  # and a gate nobody reads is a check that cannot fail arriving by a different
+  # road (markup-carve/carve#755). It was not hypothetical: it left a
+  # CI-comment-only change with no way to go green.
+  #
+  # The question this repository CAN answer, and is the only one it can act on,
+  # is whether the committed bytes are as conformant as the engine they were
+  # built from. REV names a carve-rs commit; that commit's tests/spec gitlink
+  # names the spec it was written against; the corpus at that commit is what
+  # the engine claims to implement. Measured on the artifact rebuilt from
+  # carve-rs 90b6bac: 1180 of 1180 byte-identical.
+  #
+  # And it fails for the thing this repository can actually break. Restoring
+  # the artifact built from carve-rs 297e796 while leaving REV at 90b6bac -
+  # a stale, swapped or half-committed rebuild - reports `13 of 1180 corpus
+  # cases diverge` and exits 1.
+  #
+  # WHAT THIS DOES NOT BUY, said plainly: an artifact that is simply OLD, with
+  # REV and bytes agreeing on an engine from a month ago, passes here. That is
+  # what corpus-drift below reports, and it is why deleting corpus-drift would
+  # turn this into a loosening rather than a re-aiming.
   corpus:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 
-      - name: Check out the spec corpus
+      # fetch-depth: 0 so REV can be read as a tree. A shallow clone has the
+      # tip's tree and nothing else, and REV is deliberately not required to be
+      # the tip.
+      - name: Check out carve-rs
+        uses: actions/checkout@v7
+        with:
+          repository: markup-carve/carve-rs
+          path: carve-rs
+          fetch-depth: 0
+
+      - name: Resolve the spec commit the embedded engine pins
+        id: pin
+        run: |
+          rev="$(cat internal/wasm/REV)"
+          spec="$(git -C carve-rs ls-tree "$rev" tests/spec | awk '{print $3}')"
+          if [ -z "$spec" ]; then
+            echo "internal/wasm/REV names $rev, which has no tests/spec gitlink in carve-rs;" >&2
+            echo "there is no spec commit to hold this artifact to." >&2
+            exit 1
+          fi
+          echo "carve-rs $rev pins spec $spec"
+          echo "spec=$spec" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the spec corpus that engine was written against
         uses: actions/checkout@v7
         with:
           repository: markup-carve/carve
+          ref: ${{ steps.pin.outputs.spec }}
           path: spec
 
       - name: Set up Go
@@ -70,6 +125,71 @@ jobs:
         env:
           CARVE_SPEC_CORPUS: ${{ github.workspace }}/spec/tests/corpus
         run: go test -v ./...
+
+  # The same comparison against spec MAIN, REPORTED and not gated.
+  #
+  # This is the other half of re-aiming `corpus`, and it is not optional. The
+  # question `corpus` no longer asks - how far is the embedded engine from the
+  # spec as it stands today - is still worth knowing; it is simply not
+  # something a pull request here can fix, so it must not block one. Removing
+  # this job would leave the drift invisible and turn the change above into a
+  # loosening.
+  #
+  # It prints one line naming the number, so the state is readable at a glance
+  # from the job log, the step summary and a notice annotation, rather than
+  # having to be reconstructed from a list of failing document names.
+  #
+  # IT IS NOT A CHECK THAT CANNOT FAIL. It never fails ON the number, but it
+  # fails when it did not MEASURE one: a corpus that moved, a spec layout this
+  # no longer finds, a package that will not build. Those are the ways a
+  # reporting job silently becomes decoration, and the guard against them is
+  # requiring evidence of a measurement rather than an exit status - the run
+  # has to have logged either a divergence count or a byte-identical count.
+  corpus-drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check out the spec corpus at main
+        uses: actions/checkout@v7
+        with:
+          repository: markup-carve/carve
+          path: spec
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: stable
+
+      # Same command as `corpus`, same absence of a -run filter, and
+      # TestTheCorpusJobRunsEveryCorpusGatedTest holds both to it - it checks
+      # every step that sets CARVE_SPEC_CORPUS, not the first one it finds.
+      - name: Report the drift against spec main
+        env:
+          CARVE_SPEC_CORPUS: ${{ github.workspace }}/spec/tests/corpus
+        run: |
+          go test -v ./... > drift.log 2>&1 || true
+          spec="$(git -C spec rev-parse --short HEAD)"
+          diverging="$(grep -oE '[0-9]+ of [0-9]+ corpus cases diverge' drift.log | tail -1 || true)"
+          identical="$(grep -oE '[0-9]+ corpus cases byte-identical' drift.log | tail -1 || true)"
+          if [ -n "$diverging" ]; then
+            headline="$diverging at spec main ($spec)"
+          elif [ -n "$identical" ]; then
+            headline="0 diverging, $identical at spec main ($spec)"
+          else
+            echo "::error::the drift run logged neither a divergence count nor a byte-identical count, so nothing was measured" >&2
+            tail -40 drift.log >&2
+            exit 1
+          fi
+          echo "$headline"
+          echo "::notice::$headline"
+          {
+            echo "## Embedded engine against spec main"
+            echo
+            echo "$headline"
+            echo
+            grep -E 'corpus mismatch: ' drift.log | sed -E 's/.*corpus mismatch: /- `/; s/$/`/' || true
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # The embedded wasm is a committed binary, so nothing in a diff says which
   # engine it is. internal/wasm/REV records that, and internal/wasm/carve.wasm.sha256
