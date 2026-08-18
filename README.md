@@ -283,13 +283,19 @@ again. The job **fails** when the revision is missing, is not 40 lowercase hex,
 is not a real commit, is not an ancestor of `main`, or when the committed
 `.wasm` does not hash to the recorded digest.
 
-The lag behind `main` is **printed as a number and never gates**. A commit-count
-gate would be red from the moment any PR opens in carve-rs and unclearable by
-the action it recommends, so `--max-age-days` gates on age instead, which is
-what rebuilding clears. This replaced a `::warning::` annotation, which could
-not fail a job at all - and this repository is the evidence that a warning is
-not enough, having carried one throughout while being the binding furthest
-behind, with a green scheduled run.
+The lag behind `main` is **printed as a number and never gates**. It briefly
+gated on age, at fourteen days, and that was deleted rather than retuned: age is
+a proxy for "has the engine changed in a way that matters", and a poor one -
+carve-rs can merge ten commits that touch no rendering, or one that lands a
+container ruling and moves fifty documents. Commit distance is the same proxy in
+a different unit, red from the moment any PR opens upstream and unclearable by
+the action it recommends. The number that actually answers the question is
+measured directly by the `corpus-drift` job below.
+
+Both of those replaced a `::warning::` annotation, which could not fail a job at
+all - and this repository is the evidence that a warning is not enough, having
+carried one throughout while being the binding furthest behind, with a green
+scheduled run.
 
 What the digest buys, precisely: a `carve.wasm` swapped in, truncated, or
 committed from any build other than the one that wrote the digest fails CI. What
@@ -299,14 +305,30 @@ rebuild from `REV` and compare, which needs the full Rust and WASI toolchain in
 the job, and the build is not byte-reproducible across checkout paths anyway.
 The three files being written together is the guarantee.
 
-Because the artifact is prebuilt, it can fall behind the spec with no change in
-this repository - and it did, until the corpus job below started catching it. CI
-runs the mandatory spec corpus through the **committed** `.wasm` and requires
-byte-identical HTML, so a forgotten rebuild fails a build instead of quietly
-shipping different output. `REV` says how stale the engine is; the corpus says
-whether that staleness has started to matter.
+Because the artifact is prebuilt, it can render the spec's documents wrongly with
+no change in this repository at all. Two CI jobs measure that, and they ask
+different questions:
 
-The same job drives the corpus through `ParseAST` as well, so a node type or a
+- **`corpus` gates.** It runs the mandatory spec corpus through the
+  **committed** `.wasm` and requires byte-identical HTML, against **the spec
+  commit the embedded engine pins** - `REV` names a carve-rs commit, and that
+  commit's `tests/spec` gitlink names the spec it was written against. So the
+  question is whether the committed bytes are as conformant as the engine they
+  were built from, which is a question this repository can answer and act on. A
+  stale, swapped or half-committed rebuild fails it.
+- **`corpus-drift` reports.** It runs the same comparison against spec `main`
+  and prints one line naming the number, to the job log, the step summary and a
+  notice annotation. It never fails on that number - no change here can make an
+  engine implement a ruling it has not implemented yet - but it does fail when
+  it did not measure one, so it cannot quietly become decoration.
+
+This split replaced a single job that gated against spec `main`. That version
+was red whenever the spec was ahead of the engine, which is most of the time and
+is not something a pull request here can fix; a gate in that state teaches every
+reader to skip it. The direct measurement is still taken and still printed, it
+just no longer blocks work it has nothing to do with.
+
+Both jobs drive the corpus through `ParseAST` as well, so a node type or a
 schema field name an engine rebuild drops is caught even where the rendered HTML
 is unchanged. Locally, and **without a `-run` filter** - the two AST checks are
 gated by the same variable, so filtering by name is how they came to run
