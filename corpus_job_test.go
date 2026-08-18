@@ -106,76 +106,115 @@ func corpusGatedTests(t *testing.T) []string {
 	return names
 }
 
-// The `go test` invocation of the job that sets CARVE_SPEC_CORPUS.
-func corpusJobCommand(t *testing.T) string {
+// Every `go test` invocation that runs with CARVE_SPEC_CORPUS set.
+//
+// ALL of them, not the first. There are two now - `corpus` measures against the
+// spec commit the embedded engine pins and gates on it, `corpus-drift` measures
+// against spec main and only reports - and a scan that stopped at the first
+// occurrence would leave the second free to carry exactly the narrow -run
+// filter this guard exists to forbid. A guard that checks one of two callers is
+// the same defect it was written to close, one job later.
+func corpusJobCommands(t *testing.T) []string {
 	t.Helper()
 	blob, err := os.ReadFile(".github/workflows/ci.yml")
 	if err != nil {
 		t.Fatalf("reading the workflow: %v", err)
 	}
 	lines := strings.Split(string(blob), "\n")
-	seenVariable := false
-	for _, line := range lines {
-		if strings.Contains(line, "CARVE_SPEC_CORPUS:") {
-			seenVariable = true
+	var commands []string
+	for i, line := range lines {
+		if !strings.Contains(line, "CARVE_SPEC_CORPUS:") {
 			continue
 		}
-		if !seenVariable {
-			continue
+		command, ok := runCommandAt(lines, i+1)
+		if !ok {
+			t.Fatalf("the step setting CARVE_SPEC_CORPUS at ci.yml:%d has no run: command after it", i+1)
 		}
-		trimmed := strings.TrimSpace(line)
-		if command, ok := strings.CutPrefix(trimmed, "run:"); ok {
-			return strings.TrimSpace(command)
-		}
+		commands = append(commands, command)
 	}
-	if !seenVariable {
+	if len(commands) == 0 {
 		t.Fatal("no job in ci.yml sets CARVE_SPEC_CORPUS, so the corpus tests cannot run at all")
 	}
-	t.Fatal("the job that sets CARVE_SPEC_CORPUS has no run: command after it")
-	return ""
+	return commands
+}
+
+// runCommandAt returns the next run: value at or after start, joining a block
+// scalar (`run: |`) into one string so a multi-line step reads the same as a
+// one-line one. Without this, `run: |` would be read as the command "|", and
+// the go-test assertion below would fail on a step that does run go test - a
+// false alarm that would very likely be silenced by dropping the step from the
+// scan, which is how a guard loses its second caller.
+func runCommandAt(lines []string, start int) (string, bool) {
+	for i := start; i < len(lines); i++ {
+		rest, ok := strings.CutPrefix(strings.TrimSpace(lines[i]), "run:")
+		if !ok {
+			continue
+		}
+		rest = strings.TrimSpace(rest)
+		switch rest {
+		case "|", "|-", ">", ">-":
+		default:
+			return rest, true
+		}
+		indent := len(lines[i]) - len(strings.TrimLeft(lines[i], " "))
+		var body []string
+		for j := i + 1; j < len(lines); j++ {
+			if strings.TrimSpace(lines[j]) == "" {
+				continue
+			}
+			if len(lines[j])-len(strings.TrimLeft(lines[j], " ")) <= indent {
+				break
+			}
+			body = append(body, strings.TrimSpace(lines[j]))
+		}
+		return strings.Join(body, "\n"), true
+	}
+	return "", false
 }
 
 func TestTheCorpusJobRunsEveryCorpusGatedTest(t *testing.T) {
-	command := corpusJobCommand(t)
+	commands := corpusJobCommands(t)
 	gated := corpusGatedTests(t)
 
-	if !strings.Contains(command, "go test") {
-		t.Fatalf("the corpus job's command is %q, which does not run go test", command)
-	}
+	for _, command := range commands {
+		if !strings.Contains(command, "go test") {
+			t.Fatalf("a step that sets CARVE_SPEC_CORPUS runs %q, which does not run go test", command)
+		}
 
-	fields := strings.Fields(command)
-	pattern := ""
-	for i, field := range fields {
-		if field == "-run" && i+1 < len(fields) {
-			pattern = strings.Trim(fields[i+1], `"'`)
+		fields := strings.Fields(command)
+		pattern := ""
+		for i, field := range fields {
+			if field == "-run" && i+1 < len(fields) {
+				pattern = strings.Trim(fields[i+1], `"'`)
+			}
+			if rest, ok := strings.CutPrefix(field, "-run="); ok {
+				pattern = strings.Trim(rest, `"'`)
+			}
 		}
-		if rest, ok := strings.CutPrefix(field, "-run="); ok {
-			pattern = strings.Trim(rest, `"'`)
+		if pattern == "" {
+			// No filter: everything the package defines runs. This is the shape
+			// both corpus steps have today.
+			continue
 		}
-	}
-	if pattern == "" {
-		// No filter: everything the package defines runs. This is the shape the
-		// job has today.
-		return
-	}
 
-	// Go's -run matches the pattern against the test name unanchored, so this
-	// mirrors it rather than requiring a full match.
-	filter, err := regexp.Compile(pattern)
-	if err != nil {
-		t.Fatalf("the corpus job's -run pattern %q does not compile: %v", pattern, err)
-	}
-	var unreachable []string
-	for _, name := range gated {
-		if !filter.MatchString(name) {
-			unreachable = append(unreachable, name)
+		// Go's -run matches the pattern against the test name unanchored, so
+		// this mirrors it rather than requiring a full match.
+		filter, err := regexp.Compile(pattern)
+		if err != nil {
+			t.Fatalf("a corpus step's -run pattern %q does not compile: %v", pattern, err)
 		}
-	}
-	if len(unreachable) > 0 {
-		t.Fatalf("the corpus job runs `go test -run %s`, which never executes %s. "+
-			"These tests need CARVE_SPEC_CORPUS and only that job sets it, so under this filter "+
-			"there is no configuration in which they run (markup-carve/carve-go#29). Widen the "+
-			"pattern or drop it.", pattern, strings.Join(unreachable, ", "))
+		var unreachable []string
+		for _, name := range gated {
+			if !filter.MatchString(name) {
+				unreachable = append(unreachable, name)
+			}
+		}
+		if len(unreachable) > 0 {
+			t.Fatalf("a corpus step runs `go test -run %s`, which never executes %s. "+
+				"These tests need CARVE_SPEC_CORPUS and only the corpus steps set it, so under this "+
+				"filter there is no configuration in which they run (markup-carve/carve-go#29). Widen "+
+				"the pattern or drop it.", pattern, strings.Join(unreachable, ", "))
+		}
 	}
 
 	// The ablation. Without it the loop above passes identically whether the
