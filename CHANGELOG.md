@@ -12,9 +12,13 @@ line of Go changing, so rebuilds get an entry of their own.
 ### Added
 
 - `Options.Symbols` renders `:name:` shortcodes, mapping each entry to the
-  engine's repeatable `--symbol NAME=VALUE` (#52). Keys are sorted so the
-  invocation is reproducible; values are substituted raw, so the map is trusted
-  configuration and must never be built from user input.
+  engine's repeatable `--symbol NAME=VALUE` (#52, #53). Keys are sorted, because
+  Go randomizes map iteration and an unsorted range built a different command
+  line on every call for the same map. An empty name, a name containing `=` and
+  a NUL in either half are refused rather than corrupted; anything the engine's
+  shortcode grammar cannot match is inert, not an error. Values are substituted
+  raw, so the map is trusted configuration and must never be built from user
+  input.
 
 ## [0.1.1] - 2026-08-18
 
