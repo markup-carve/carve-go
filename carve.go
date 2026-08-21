@@ -254,15 +254,122 @@ func ToHTMLOptions(source string, opts Options) (string, error) {
 // context, so a single caller's canceled context cannot poison the shared
 // engine for later callers.
 func ToHTMLOptionsContext(ctx context.Context, source string, opts Options) (string, error) {
+	return RenderContext(ctx, source, OutputHTML, opts)
+}
+
+// OutputFormat selects what the engine writes. It mirrors the engine CLI's
+// output-format flags, which are mutually exclusive there and here.
+type OutputFormat string
+
+const (
+	// OutputHTML is HTML (the engine default). The zero OutputFormat means
+	// this, so an existing caller that passes no format keeps HTML.
+	OutputHTML OutputFormat = ""
+	// OutputMarkdown is Markdown (CLI --markdown).
+	OutputMarkdown OutputFormat = "--markdown"
+	// OutputPlainText is unstyled plain text (CLI --plain).
+	OutputPlainText OutputFormat = "--plain"
+	// OutputANSI is plain text with ANSI terminal styling (CLI --ansi).
+	OutputANSI OutputFormat = "--ansi"
+	// OutputCarve is canonical Carve source (CLI --carve) - the formatter's
+	// output. Rendering to this format is how you format a document.
+	OutputCarve OutputFormat = "--carve"
+)
+
+func (f OutputFormat) flag() string {
+	if f == OutputHTML {
+		// Passed explicitly rather than relying on the engine default, so the
+		// argv this package builds is self-documenting.
+		return "--html"
+	}
+	return string(f)
+}
+
+// ToMarkdown renders Carve source to Markdown.
+//
+// Uses context.Background(); prefer ToMarkdownContext for untrusted input, for
+// the same reason ToHTML does.
+func ToMarkdown(source string) (string, error) {
+	return RenderContext(context.Background(), source, OutputMarkdown, Options{})
+}
+
+// ToMarkdownContext is ToMarkdown with a caller-supplied context bounding the
+// per-call module execution.
+func ToMarkdownContext(ctx context.Context, source string) (string, error) {
+	return RenderContext(ctx, source, OutputMarkdown, Options{})
+}
+
+// ToPlainText renders Carve source to unstyled plain text.
+//
+// Uses context.Background(); prefer ToPlainTextContext for untrusted input.
+func ToPlainText(source string) (string, error) {
+	return RenderContext(context.Background(), source, OutputPlainText, Options{})
+}
+
+// ToPlainTextContext is ToPlainText with a caller-supplied context.
+func ToPlainTextContext(ctx context.Context, source string) (string, error) {
+	return RenderContext(ctx, source, OutputPlainText, Options{})
+}
+
+// ToANSI renders Carve source to plain text with ANSI terminal styling.
+//
+// Uses context.Background(); prefer ToANSIContext for untrusted input.
+func ToANSI(source string) (string, error) {
+	return RenderContext(context.Background(), source, OutputANSI, Options{})
+}
+
+// ToANSIContext is ToANSI with a caller-supplied context.
+func ToANSIContext(ctx context.Context, source string) (string, error) {
+	return RenderContext(ctx, source, OutputANSI, Options{})
+}
+
+// ToCarve renders Carve source back to CANONICAL Carve source - that is, it
+// formats the document. The engine's writer decides the canonical spelling of
+// every construct (PART 11), so this is the same transformation `carve fmt`
+// performs, returned as a string instead of written to a file.
+//
+// Uses context.Background(); prefer ToCarveContext for untrusted input.
+func ToCarve(source string) (string, error) {
+	return RenderContext(context.Background(), source, OutputCarve, Options{})
+}
+
+// ToCarveContext is ToCarve with a caller-supplied context.
+func ToCarveContext(ctx context.Context, source string) (string, error) {
+	return RenderContext(ctx, source, OutputCarve, Options{})
+}
+
+// Render renders Carve source to the given format with the given options.
+//
+// The named helpers (ToHTML, ToMarkdown, ToPlainText, ToANSI, ToCarve) cover
+// the common cases; use this when you need options with a non-HTML format.
+//
+// Uses context.Background(); prefer RenderContext for untrusted input.
+func Render(source string, format OutputFormat, opts Options) (string, error) {
+	return RenderContext(context.Background(), source, format, opts)
+}
+
+// RenderContext is Render with a caller-supplied context that bounds the
+// per-call module execution (a deadline/cancellation interrupts the running
+// render). The one-time wasm compilation runs under a background context, so a
+// single caller's canceled context cannot poison the shared engine for later
+// callers.
+//
+// Options.Static is HTML-only and is REJECTED with a non-nil error for any
+// other format, rather than silently ignored: a caller that asked for static
+// output and got interactive output back would have no way to notice.
+func RenderContext(ctx context.Context, source string, format OutputFormat, opts Options) (string, error) {
+	if opts.Static && format != OutputHTML {
+		return "", fmt.Errorf("carve: Options.Static applies to HTML only, not %q", format.flag())
+	}
+
 	eng, err := loadEngine()
 	if err != nil {
 		return "", err
 	}
 
 	// argv[0] is the program name; the engine reads source from stdin when no
-	// file argument is given. --html is the default but is passed explicitly
-	// so the contract is self-documenting.
-	args := []string{"carve", "--html"}
+	// file argument is given.
+	args := []string{"carve", format.flag()}
 	if opts.Static {
 		args = append(args, "--static")
 	}
