@@ -191,6 +191,13 @@ type Options struct {
 	// The name is validated by the engine rather than duplicated here, so a
 	// profile added to the engine works without a change in this package; an
 	// unknown name comes back as an error carrying the engine's message.
+	//
+	// A document over the profile's length cap is REFUSED: the call returns an
+	// error carrying the engine's max_length_exceeded line, which names the
+	// limit and the size given. It does not return an empty string and a nil
+	// error - that shape is indistinguishable from a document that rendered to
+	// nothing, and it is what the engine embedded before
+	// markup-carve/carve-rs#1194 did.
 	Profile string
 }
 
