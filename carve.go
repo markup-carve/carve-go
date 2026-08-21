@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 
@@ -141,6 +142,48 @@ type Options struct {
 	// off. Set Safe for anything you did not author yourself.
 	Safe bool
 
+	// Symbols maps a shortcode name to the text that replaces it, so
+	// `:NAME:` in the source renders as VALUE. Each entry maps to one
+	// repeatable engine CLI flag --symbol NAME=VALUE.
+	//
+	// Unlike build-time renderer injection (see Static), this crosses the
+	// WASI/CLI boundary without trouble: a symbol map is plain data, not a
+	// host closure, so there is nothing for the stdio contract to lose.
+	//
+	// A name the map does not carry is left alone - `:unknown:` stays
+	// literal text rather than becoming an error or an empty string. The
+	// engine's word-boundary rule is unchanged by the map: a shortcode is
+	// only recognized after a boundary, so `a:NAME:b` and `3:NAME:4` stay
+	// literal however the map is populated.
+	//
+	// The keys are sorted before they are emitted, so the same map always
+	// produces the same argument list. Go randomizes map iteration order by
+	// design, and passing that order straight through would make each call
+	// build a different command line - harmless for the output, but it makes
+	// the invocation irreproducible and any test asserting on it flake
+	// intermittently, which is a miserable thing to debug later.
+	//
+	// SECURITY: values are substituted RAW, exactly as written, and are NOT
+	// escaped. That is deliberate across every Carve engine - it is what lets
+	// a symbol expand to markup such as an <img> tag - but it means the map
+	// is trusted processor configuration, on the same footing as the code
+	// calling this package. NEVER build a symbols map out of untrusted or
+	// user-supplied input: a value is a script-injection vector, and Safe
+	// does not constrain it (Safe governs =html raw blocks in the DOCUMENT,
+	// not this configuration). Populate it from your own site or application
+	// config and nowhere else.
+	//
+	// An entry that cannot reach the engine intact is refused with an error
+	// rather than silently reshaped: a name may not be empty or contain "=",
+	// and neither half may contain a NUL. The "=" rule is the load-bearing
+	// one - the engine splits the argument at its FIRST "=", so a name of
+	// "a=b" with a value of "c" would arrive as the name "a" mapped to "b=c",
+	// a different map than the caller wrote, and nothing would report it.
+	//
+	// A name the engine's shortcode grammar cannot match is NOT rejected; it
+	// is simply inert, the same as an entry nothing references.
+	Symbols map[string]string
+
 	// Profile restricts which constructs are allowed at all and caps input
 	// length: "full", "article", "comment" or "minimal". Empty means no
 	// profile. It maps to the engine CLI flag --profile.
@@ -236,6 +279,11 @@ func ToHTMLOptionsContext(ctx context.Context, source string, opts Options) (str
 	if opts.Profile != "" {
 		args = append(args, "--profile", opts.Profile)
 	}
+	symArgs, err := symbolArgs(opts.Symbols)
+	if err != nil {
+		return "", err
+	}
+	args = append(args, symArgs...)
 
 	out, code, err := runEngine(ctx, eng, args, source)
 	if err != nil {
@@ -295,6 +343,70 @@ func ParseASTContext(ctx context.Context, source string) (json.RawMessage, error
 		return nil, fmt.Errorf("carve: engine did not return JSON (stderr: %s)", out.stderr)
 	}
 	return json.RawMessage(out.stdout), nil
+}
+
+// symbolArgs turns a symbol map into the engine's repeatable --symbol
+// arguments, in a deterministic order.
+//
+// The keys are sorted rather than ranged over: Go randomizes map iteration on
+// purpose, so an unsorted range would hand the engine a different argument
+// list on every call for the same map. The rendered HTML would not differ, but
+// the invocation would not be reproducible, and anything asserting on it would
+// fail on a schedule nobody can reconstruct.
+//
+// It refuses exactly the entries that cannot reach the engine INTACT, and
+// nothing else:
+//
+//   - a name containing "=", because the engine splits each --symbol value at
+//     its FIRST "=". A name of "a=b" with a value of "c" would arrive as the
+//     name "a" mapped to "b=c" - a different map than the caller wrote, with
+//     no error raised anywhere. This is the one genuine corruption.
+//   - an empty name, which can never be spelled as a shortcode and is caller
+//     error rather than configuration.
+//   - a NUL in either half, which the wasm runtime refuses outright. Left
+//     alone it fails the whole render with an opaque "args invalid" that names
+//     neither the entry nor the field, so it is caught here where the message
+//     can point at the offending symbol.
+//
+// Nothing else is rejected, deliberately. A name the engine's shortcode
+// grammar will not match - "a b", "a.b", "ä" - is dead configuration, not a
+// corrupted argument: it arrives exactly as written and simply never fires.
+// Screening for it would mean duplicating the engine's name grammar in Go and
+// re-breaking it here every time the engine widens it, which is the tradeoff
+// Profile already settles the other way. Newlines are allowed through for the
+// same reason plus a positive one: a value is substituted raw, so a multi-line
+// value is a legitimate thing to want, and it was measured to round-trip into
+// the output unchanged.
+func symbolArgs(symbols map[string]string) ([]string, error) {
+	if len(symbols) == 0 {
+		return nil, nil
+	}
+	names := make([]string, 0, len(symbols))
+	for name := range symbols {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	args := make([]string, 0, len(names)*2)
+	for _, name := range names {
+		value := symbols[name]
+		if name == "" {
+			return nil, errors.New("carve: symbol name must not be empty")
+		}
+		if strings.Contains(name, "=") {
+			return nil, fmt.Errorf("carve: symbol name %q must not contain %q: the engine "+
+				"splits the argument at its first %q, so this would register a different "+
+				"name and value than you wrote", name, "=", "=")
+		}
+		if strings.ContainsRune(name, 0) {
+			return nil, fmt.Errorf("carve: symbol name %q must not contain a NUL", name)
+		}
+		if strings.ContainsRune(value, 0) {
+			return nil, fmt.Errorf("carve: value for symbol %q must not contain a NUL", name)
+		}
+		args = append(args, "--symbol", name+"="+value)
+	}
+	return args, nil
 }
 
 // engineOutput is what one engine invocation produced.
