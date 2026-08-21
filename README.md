@@ -71,6 +71,36 @@ type Options struct {
 	Symbols    map[string]string // render :name: shortcodes (CLI --symbol NAME=VALUE)
 }
 
+// Non-HTML output targets. Every one of these is the same embedded engine with
+// a different output flag, so they need no extra dependency and no rebuild.
+func ToMarkdown(source string) (string, error)
+func ToMarkdownContext(ctx context.Context, source string) (string, error)
+func ToPlainText(source string) (string, error)
+func ToPlainTextContext(ctx context.Context, source string) (string, error)
+func ToANSI(source string) (string, error)
+func ToANSIContext(ctx context.Context, source string) (string, error)
+
+// ToCarve renders back to CANONICAL Carve source - the same transformation
+// `carve fmt` performs, returned as a string. It is idempotent.
+func ToCarve(source string) (string, error)
+func ToCarveContext(ctx context.Context, source string) (string, error)
+
+// Render is the general form, for a non-HTML format WITH options.
+func Render(source string, format OutputFormat, opts Options) (string, error)
+func RenderContext(ctx context.Context, source string, format OutputFormat, opts Options) (string, error)
+
+// OutputHTML is the zero value, so a caller that never names a format keeps
+// getting HTML.
+type OutputFormat string
+
+const (
+	OutputHTML      OutputFormat = ""            // HTML (CLI --html)
+	OutputMarkdown  OutputFormat = "--markdown"  // Markdown
+	OutputPlainText OutputFormat = "--plain"     // unstyled plain text
+	OutputANSI      OutputFormat = "--ansi"      // plain text with ANSI styling
+	OutputCarve     OutputFormat = "--carve"     // canonical Carve source
+)
+
 // ReadStamp reports the provenance marker a document carries; ok is false when
 // it carries none. NeedsReview reports whether the document was last processed
 // under an older spec version than the embedded engine targets.
@@ -84,6 +114,24 @@ type Stamp struct {
 	GeneratedBy string // the engine that wrote the marker, empty when unrecorded
 }
 ```
+
+Two boundaries on the non-HTML targets, both measured rather than assumed:
+
+- **`Options.Static` is HTML-only** and is REJECTED with an error for any other
+  format rather than ignored. A caller who asked for static output and silently
+  got interactive output back would have no way to notice.
+- **`Options.Symbols` reaches HTML only.** The engine's Markdown, plain-text and
+  ANSI renderers each emit a `:name:` shortcode literally and never consult the
+  map. That is defensible for Markdown, where the consumer may have its own
+  shortcode support, and correct for `OutputCarve`, where canonical source keeps
+  what the author wrote - but it means a terminal render shows `:tick:` rather
+  than the glyph you mapped. A test pins the behavior so a future engine that
+  changes it cannot do so silently.
+
+Not available here: **`lint`**. It exists in carve-rs as a library API
+(`carve::lint_carve`) and has no CLI surface, and carve-go reaches the engine
+only across the WASI stdio/argv boundary. It arrives once the engine grows a
+`carve lint` subcommand and the embedded artifact is rebuilt past it.
 
 ### The parsed AST
 

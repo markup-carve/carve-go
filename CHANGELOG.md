@@ -11,6 +11,18 @@ line of Go changing, so rebuilds get an entry of their own.
 
 ### Added
 
+- **Markdown, plain-text, ANSI and canonical-Carve output** - `ToMarkdown`,
+  `ToPlainText`, `ToANSI`, `ToCarve`, each with a `Context` variant, plus
+  `Render`/`RenderContext` and the `OutputFormat` type for a non-HTML format
+  with options. The embedded engine already understood every one of these
+  flags, so this needs no rebuild and no new dependency; `OutputHTML` is the
+  zero value, so existing callers are unaffected. `ToCarve` is the formatter:
+  it returns what `carve fmt` writes, and it is idempotent.
+
+  `Options.Static` is rejected for non-HTML formats rather than ignored.
+  `Options.Symbols` reaches HTML only - an engine limitation, pinned by a test
+  and documented in the README.
+
 - `Options.Symbols` renders `:name:` shortcodes, mapping each entry to the
   engine's repeatable `--symbol NAME=VALUE` (#52, #53). Keys are sorted, because
   Go randomizes map iteration and an unsorted range built a different command
