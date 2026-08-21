@@ -64,10 +64,11 @@ func ToHTMLOptionsContext(ctx context.Context, source string, opts Options) (str
 
 // Options configures a render call. The zero value is the interactive default.
 type Options struct {
-	Static     bool     // self-contained static HTML (CLI --static; implies --extensions)
-	Extensions []string // enable bundled interactive extensions (CLI --extensions)
-	Safe       bool     // escape =html raw blocks/spans (CLI --safe)
-	Profile    string   // full|article|comment|minimal (CLI --profile)
+	Static     bool              // self-contained static HTML (CLI --static; implies --extensions)
+	Extensions []string          // enable bundled interactive extensions (CLI --extensions)
+	Safe       bool              // escape =html raw blocks/spans (CLI --safe)
+	Profile    string            // full|article|comment|minimal (CLI --profile)
+	Symbols    map[string]string // render :name: shortcodes (CLI --symbol NAME=VALUE)
 }
 
 // ReadStamp reports the provenance marker a document carries; ok is false when
@@ -108,6 +109,56 @@ one.
 `json.RawMessage` rather than a typed tree on purpose: the node set is spec
 surface that grows, and a Go struct hierarchy would either lag it or force a
 breaking change every time it does. Unmarshal into whatever shape you need.
+
+### Symbol shortcodes
+
+`Symbols` maps a shortcode name to the text that replaces it, so `:name:` in the
+source renders as that value:
+
+```go
+html, err := carve.ToHTMLOptions("Ship it :rocket:", carve.Options{
+    Symbols: map[string]string{"rocket": "\U0001F680"},
+})
+// <p>Ship it 🚀</p>
+```
+
+A name the map does not carry is left alone - `:unknown:` stays literal text
+rather than becoming an error or an empty string - and the engine's
+word-boundary rule is unchanged by the map, so a glued run like `a:rocket:b`,
+`3:rocket:4` or a `` `:rocket:` `` code span still does not substitute. That is
+what makes a map safe to enable for a whole site: it cannot rewrite times,
+ratios or package paths that happen to contain colons.
+
+> [!WARNING]
+> Values are substituted **raw**, exactly as written, and are **not** escaped.
+> That is deliberate across every Carve engine - it is what lets a symbol expand
+> to markup such as an `<img>` tag - but it means the map is *trusted processor
+> configuration*, on the same footing as the code calling this package. **NEVER
+> build a symbols map out of untrusted or user-supplied input.** A value is a
+> script-injection vector, and `Safe` does not constrain it: `Safe` governs
+> `=html` in the **document**, not this configuration. Populate it from your own
+> site or application config and nowhere else.
+
+Keys are sorted before they are handed to the engine, so the same map always
+produces the same invocation. (Go randomizes map iteration on purpose; passing
+that order straight through would make each call build a different command line
+and any test asserting on it flake.)
+
+An entry that could not reach the engine intact is refused with an error rather
+than silently reshaped - a name may not be empty or contain `=`, and neither
+half may contain a NUL. The `=` rule is the load-bearing one: the engine splits
+each argument at its **first** `=`, so a name of `a=b` with a value of `c` would
+otherwise register `a` mapped to `b=c`, a different map than you wrote, with
+nothing reporting it. A name the engine's shortcode grammar cannot match is not
+rejected, only inert.
+
+There is no practical ceiling on the map's size here. `--symbol` is repeatable
+rather than file-based, so a large map means a large argument list, which on an
+engine driven as a **subprocess** would eventually meet `ARG_MAX`. carve-go
+spawns no process: the engine is embedded wasm and the arguments go into guest
+linear memory through wazero, so the governing limit is `maxMemoryPages`, not
+`ARG_MAX`. A full emoji set (~3800 entries, ~92 KiB of arguments) renders in
+tens of milliseconds; 100000 entries (~2.5 MiB) still renders.
 
 ## Stored documents and spec versions
 

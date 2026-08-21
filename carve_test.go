@@ -1,6 +1,8 @@
 package carve
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
@@ -703,5 +705,272 @@ func TestReadStamp_MarkerWithoutAWriter(t *testing.T) {
 	}
 	if stamp.GeneratedBy != "" {
 		t.Fatalf("GeneratedBy = %q, want empty for an unrecorded writer", stamp.GeneratedBy)
+	}
+}
+
+// ------------------------------------------------------------------- symbols
+
+// mustEngine loads the shared embedded engine or fails the test. It exists so a
+// test can drive runEngine directly to show what the engine does with an
+// argument this package refuses to build.
+func mustEngine(t *testing.T) *compiledEngine {
+	t.Helper()
+	eng, err := loadEngine()
+	if err != nil {
+		t.Fatalf("loadEngine: %v", err)
+	}
+	return eng
+}
+
+// TestToHTMLOptions_SymbolsSubstitute is the base case the whole option exists
+// for: a `:name:` the map carries becomes its value.
+func TestToHTMLOptions_SymbolsSubstitute(t *testing.T) {
+	out, err := ToHTMLOptions("A :smile: here", Options{
+		Symbols: map[string]string{"smile": "\U0001F600"},
+	})
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	if !strings.Contains(out, "\U0001F600") {
+		t.Fatalf("expected the mapped glyph in output, got %q", out)
+	}
+	if strings.Contains(out, ":smile:") {
+		t.Fatalf("the shortcode should be gone, got %q", out)
+	}
+}
+
+// TestToHTMLOptions_NoSymbolsUnchanged pins that the option is inert when it is
+// not set. A nil map must render exactly what the same call rendered before the
+// option existed - no flag, no behavior change for every caller who never asks
+// for one.
+func TestToHTMLOptions_NoSymbolsUnchanged(t *testing.T) {
+	const src = "A :smile: here"
+	want, err := ToHTML(src)
+	if err != nil {
+		t.Fatalf("ToHTML error: %v", err)
+	}
+	if !strings.Contains(want, ":smile:") {
+		t.Fatalf("without a map the shortcode must stay literal, got %q", want)
+	}
+	for _, tc := range []struct {
+		name string
+		opts Options
+	}{
+		{"nil map", Options{}},
+		{"empty map", Options{Symbols: map[string]string{}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := ToHTMLOptions(src, tc.opts)
+			if err != nil {
+				t.Fatalf("error: %v", err)
+			}
+			if got != want {
+				t.Fatalf("output changed\n got: %q\nwant: %q", got, want)
+			}
+		})
+	}
+	// The flag must not be emitted at all, not merely be harmless.
+	args, err := symbolArgs(nil)
+	if err != nil || args != nil {
+		t.Fatalf("symbolArgs(nil) = %v, %v; want nil, nil", args, err)
+	}
+	if args, err = symbolArgs(map[string]string{}); err != nil || args != nil {
+		t.Fatalf("symbolArgs(empty) = %v, %v; want nil, nil", args, err)
+	}
+}
+
+// TestToHTMLOptions_UnknownSymbolStaysLiteral: a name the map does not carry is
+// left alone rather than blanked, so one configured symbol cannot swallow every
+// other colon run in the document.
+func TestToHTMLOptions_UnknownSymbolStaysLiteral(t *testing.T) {
+	out, err := ToHTMLOptions("A :smile: and :nope: here", Options{
+		Symbols: map[string]string{"smile": "X"},
+	})
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	if !strings.Contains(out, ":nope:") {
+		t.Fatalf("an unmapped name must stay literal, got %q", out)
+	}
+	if !strings.Contains(out, "X") {
+		t.Fatalf("the mapped name must still substitute, got %q", out)
+	}
+}
+
+// TestToHTMLOptions_SymbolsKeepWordBoundary asserts that populating the map does
+// not loosen the engine's word-boundary rule. Without the guard a symbol map
+// would rewrite times ("10:30:"), package paths and any glued colon run in the
+// document, which is what makes shortcodes safe to enable globally.
+func TestToHTMLOptions_SymbolsKeepWordBoundary(t *testing.T) {
+	opts := Options{Symbols: map[string]string{"smile": "SUBSTITUTED"}}
+	for _, tc := range []struct {
+		name, src string
+		want      bool
+	}{
+		{"glued both sides", "a:smile:b", false},
+		{"glued digits", "3:smile:4", false},
+		{"inside a code span", "`:smile:`", false},
+		{"after a space", "A :smile: here", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := ToHTMLOptions(tc.src, opts)
+			if err != nil {
+				t.Fatalf("error: %v", err)
+			}
+			if got := strings.Contains(out, "SUBSTITUTED"); got != tc.want {
+				t.Fatalf("substituted = %v, want %v for %q (out %q)", got, tc.want, tc.src, out)
+			}
+		})
+	}
+}
+
+// TestSymbolArgs_Deterministic is the reason the keys are sorted. Go randomizes
+// map iteration deliberately, so ranging a map straight into the argument list
+// produces a different command line per call - the render would still be
+// correct, but the invocation would not be reproducible and anything asserting
+// on it would flake on a schedule nobody can reconstruct.
+//
+// It uses eight entries on purpose: a one- or two-entry map can come out in
+// the same order by chance often enough to pass a randomized build.
+func TestSymbolArgs_Deterministic(t *testing.T) {
+	symbols := map[string]string{
+		"alpha": "1", "bravo": "2", "charlie": "3", "delta": "4",
+		"echo": "5", "foxtrot": "6", "golf": "7", "hotel": "8",
+	}
+	first, err := symbolArgs(symbols)
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	want := []string{
+		"--symbol", "alpha=1", "--symbol", "bravo=2",
+		"--symbol", "charlie=3", "--symbol", "delta=4",
+		"--symbol", "echo=5", "--symbol", "foxtrot=6",
+		"--symbol", "golf=7", "--symbol", "hotel=8",
+	}
+	if strings.Join(first, "\x1f") != strings.Join(want, "\x1f") {
+		t.Fatalf("argument list is not in sorted key order\n got: %v\nwant: %v", first, want)
+	}
+	// Repeat enough times that a randomized order would have to be lucky 500
+	// times running to slip through.
+	for i := 0; i < 500; i++ {
+		got, err := symbolArgs(symbols)
+		if err != nil {
+			t.Fatalf("error on call %d: %v", i, err)
+		}
+		if strings.Join(got, "\x1f") != strings.Join(first, "\x1f") {
+			t.Fatalf("call %d produced a different argument list\n got: %v\nfirst: %v", i, got, first)
+		}
+	}
+}
+
+// TestToHTMLOptions_SymbolsRejectsCorruptingEntry covers the entries that cannot
+// reach the engine as written. The "=" case is the load-bearing one: carve-rs
+// splits each --symbol value at its FIRST "=", so passing a name that contains
+// one would register a DIFFERENT name and value and report nothing.
+func TestToHTMLOptions_SymbolsRejectsCorruptingEntry(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		symbols map[string]string
+		wantIn  string
+	}{
+		{"equals in name", map[string]string{"a=b": "c"}, `"="`},
+		{"empty name", map[string]string{"": "x"}, "must not be empty"},
+		{"NUL in name", map[string]string{"a\x00b": "x"}, "NUL"},
+		{"NUL in value", map[string]string{"a": "x\x00y"}, "NUL"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := ToHTMLOptions("A :a: here", Options{Symbols: tc.symbols})
+			if err == nil {
+				t.Fatalf("expected an error, got output %q", out)
+			}
+			if !strings.Contains(err.Error(), tc.wantIn) {
+				t.Fatalf("error should mention %s, got %v", tc.wantIn, err)
+			}
+		})
+	}
+
+	// State the corruption the "=" rule prevents, so the rule cannot be
+	// removed without this failing: passed through, "a=b" -> "c" arrives as
+	// "a" -> "b=c", and ":a:" would substitute to something nobody wrote.
+	out, code, err := runEngine(context.Background(), mustEngine(t),
+		[]string{"carve", "--html", "--symbol", "a=b=c"}, "A :a: here")
+	if err != nil || code != 0 {
+		t.Fatalf("probe render failed: code=%d err=%v", code, err)
+	}
+	if !strings.Contains(out.stdout, "b=c") {
+		t.Fatalf("expected the engine to re-cut the pair at the first =, got %q", out.stdout)
+	}
+}
+
+// TestToHTMLOptions_SymbolsAcceptsUnmatchableName pins the other side of the
+// validation line. A name the engine's shortcode grammar will never match is
+// inert, not corrupt: it arrives exactly as written and simply never fires.
+// Screening for it would mean duplicating the engine's name grammar in Go and
+// re-breaking it here every time the engine widens it - the tradeoff Profile
+// already settles the same way.
+func TestToHTMLOptions_SymbolsAcceptsUnmatchableName(t *testing.T) {
+	for _, name := range []string{"a b", "a.b", "ä", "a\nb"} {
+		out, err := ToHTMLOptions("A :x: here", Options{
+			Symbols: map[string]string{name: "V", "x": "OK"},
+		})
+		if err != nil {
+			t.Fatalf("name %q should be accepted, got error: %v", name, err)
+		}
+		if !strings.Contains(out, "OK") {
+			t.Fatalf("an inert entry must not disturb a live one, got %q", out)
+		}
+	}
+}
+
+// TestToHTMLOptions_SymbolsSubstituteRaw pins the security contract the godoc
+// states, so it cannot drift quietly. Values are emitted RAW and are NOT
+// escaped - that is what lets a symbol expand to markup, and it is exactly why
+// the map must never be built from untrusted input. Safe does not constrain it
+// either: Safe governs =html in the DOCUMENT, not processor configuration.
+func TestToHTMLOptions_SymbolsSubstituteRaw(t *testing.T) {
+	symbols := map[string]string{"logo": "<img src='/l.svg'>"}
+	for _, tc := range []struct {
+		name string
+		opts Options
+	}{
+		{"default", Options{Symbols: symbols}},
+		{"with Safe", Options{Safe: true, Symbols: symbols}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := ToHTMLOptions("A :logo: here", tc.opts)
+			if err != nil {
+				t.Fatalf("error: %v", err)
+			}
+			if !strings.Contains(out, "<img src='/l.svg'>") {
+				t.Fatalf("symbol values are substituted raw by design, got %q", out)
+			}
+		})
+	}
+}
+
+// TestToHTMLOptions_SymbolsAtEmojiSetScale answers the size question the option
+// raises. --symbol is repeatable rather than file-based, so a large map becomes
+// a large argument list - which on a SUBPROCESS engine would run into ARG_MAX.
+// carve-go spawns no process: the engine is embedded wasm and the arguments go
+// into guest linear memory through wazero's ModuleConfig, so the governing
+// limit is maxMemoryPages, not ARG_MAX.
+//
+// 3800 entries is roughly a full emoji set, the size the question was raised
+// about. This is a regression guard on that property: if carve-go ever moves to
+// driving an external binary, this is where it fails loudly instead of in a
+// consumer's build.
+func TestToHTMLOptions_SymbolsAtEmojiSetScale(t *testing.T) {
+	for _, n := range []int{40, 3800} {
+		symbols := make(map[string]string, n)
+		for i := 0; i < n; i++ {
+			symbols[fmt.Sprintf("sym%06d", i)] = fmt.Sprintf("G%d", i)
+		}
+		out, err := ToHTMLOptions("A :sym000007: here", Options{Symbols: symbols})
+		if err != nil {
+			t.Fatalf("a %d-entry map must render, got error: %v", n, err)
+		}
+		if !strings.Contains(out, "G7") {
+			t.Fatalf("a %d-entry map must still substitute, got %q", n, out)
+		}
 	}
 }

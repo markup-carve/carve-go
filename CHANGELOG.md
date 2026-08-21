@@ -9,6 +9,13 @@ line of Go changing, so rebuilds get an entry of their own.
 
 ## [Unreleased]
 
+### Added
+
+- `Options.Symbols` renders `:name:` shortcodes, mapping each entry to the
+  engine's repeatable `--symbol NAME=VALUE` (#52). Keys are sorted so the
+  invocation is reproducible; values are substituted raw, so the map is trusted
+  configuration and must never be built from user input.
+
 ## [0.1.1] - 2026-08-18
 
 ### Security
