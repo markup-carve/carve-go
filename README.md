@@ -295,6 +295,12 @@ html, err := carve.ToHTMLOptionsContext(ctx, untrusted, carve.Options{
 The engine owns the list of valid names, so an unknown one comes back as an
 error carrying the engine's message rather than being silently ignored.
 
+A document over the profile's length cap is **refused**, not truncated and not
+quietly dropped: the call returns an error carrying the engine's
+`max_length_exceeded` line, naming the limit and the size given. `comment` caps
+at 100,000 bytes and `minimal` at 10,000. The engine owns those numbers too, so
+a caller has no reason to count bytes itself.
+
 Full recipe, defaults and threat model:
 [Security](https://markup-carve.github.io/carve/security).
 

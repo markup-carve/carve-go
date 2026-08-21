@@ -501,15 +501,23 @@ func TestEmbeddedEngineLanguageSurface(t *testing.T) {
 // TestToHTML_DiagramPresets asserts that the full FencedRender preset set is
 // registered under --extensions, so plantuml/puml, dot/graphviz and d2 fences
 // become hydration elements (rendered client-side downstream).
+//
+// The accessible name is part of the expectation, not decoration: PART 9 §16a
+// requires a rendered diagram to say what it is, and markup-carve/carve-rs#1187
+// gave FencedRender `role="img"` plus a `label` defaulting to the preset's
+// name. Asserting only on the class would leave this green if the name were
+// dropped again - and the name is what a screen reader has to work with.
 func TestToHTML_DiagramPresets(t *testing.T) {
 	cases := []struct {
 		src  string
 		want string
 	}{
-		{"``` plantuml\nA -> B\n```\n", `<pre class="plantuml">A -> B</pre>`},
-		{"``` puml\nA -> B\n```\n", `<pre class="plantuml">A -> B</pre>`},
-		{"``` dot\na -> b\n```\n", `<pre class="graphviz">a -> b</pre>`},
-		{"``` d2\nx -> y\n```\n", `<pre class="d2">x -> y</pre>`},
+		{"``` plantuml\nA -> B\n```\n", `<pre class="plantuml" role="img" aria-label="plantuml">A -> B</pre>`},
+		// `puml` is an alias, and the name follows the PRESET rather than the
+		// fence word the author typed.
+		{"``` puml\nA -> B\n```\n", `<pre class="plantuml" role="img" aria-label="plantuml">A -> B</pre>`},
+		{"``` dot\na -> b\n```\n", `<pre class="graphviz" role="img" aria-label="graphviz">a -> b</pre>`},
+		{"``` d2\nx -> y\n```\n", `<pre class="d2" role="img" aria-label="d2">x -> y</pre>`},
 	}
 	for _, c := range cases {
 		out, err := ToHTMLOptions(c.src, Options{Extensions: []string{"all"}})

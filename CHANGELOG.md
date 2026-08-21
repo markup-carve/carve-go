@@ -9,6 +9,27 @@ line of Go changing, so rebuilds get an entry of their own.
 
 ## [Unreleased]
 
+### Fixed
+
+- An over-cap document under a `Profile` is an **error**, not an empty render
+  reported as success (#56, markup-carve/carve-rs#1194). `Profile: "comment"`
+  above 100,000 bytes and `Profile: "minimal"` above 10,000 returned `("", nil)`;
+  they now return the engine's `max_length_exceeded` line, naming the limit and
+  the size given. The refusal reaches every render target, `--carve` included
+  (markup-carve/carve-rs#1198).
+
+### Changed
+
+- Rebuild the embedded engine from carve-rs `a33c42a` onto
+  `3dbaf64eb9387b807771ec4d3a46a2557b20dd2a`, 79 commits. Beyond the refusal
+  above, the rendering changes an existing document can see are carve-rs' own
+  `Unreleased` section - among them: `=>` is no longer an arrow and `<==` is the
+  canonical left double arrow, a hyphen run opening a word is a flag rather than
+  a dash, a table cell's marker run must be followed by a space, `<thead>` and
+  `<tfoot>` write one row per line, and diagrams, tab sets, code groups and the
+  footnote/index back-links carry accessible names (PART 9 §16a).
+- The spec corpus this artifact renders byte-identically is 1341 documents.
+
 ### Added
 
 - **Markdown, plain-text, ANSI and canonical-Carve output** - `ToMarkdown`,
