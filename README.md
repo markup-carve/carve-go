@@ -503,7 +503,3 @@ native CLI run with `--html --static --extensions`.
 The byte-identical tests auto-skip if the native `carve` binary is not found
 (the static one also skips unless the binary advertises `--static`); set
 `CARVE_BIN=/path/to/carve` to point it explicitly.
-
-## License
-
-MIT. See [LICENSE](LICENSE).
