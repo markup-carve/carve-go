@@ -32,6 +32,8 @@ line of Go changing, so rebuilds get an entry of their own.
 
 ### Added
 
+- `FromHTML` and `FromMarkdown`, with context variants, expose canonical
+  migration and a shared machine-readable loss report.
 - **Markdown, plain-text, ANSI and canonical-Carve output** - `ToMarkdown`,
   `ToPlainText`, `ToANSI`, `ToCarve`, each with a `Context` variant, plus
   `Render`/`RenderContext` and the `OutputFormat` type for a non-HTML format

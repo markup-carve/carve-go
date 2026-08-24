@@ -345,6 +345,94 @@ func ToCarveContext(ctx context.Context, source string) (string, error) {
 	return RenderContext(ctx, source, OutputCarve, Options{})
 }
 
+// MigrationDiagnostic describes one observable loss or normalization made by
+// an importer.
+type MigrationDiagnostic struct {
+	Code     string `json:"code"`
+	Message  string `json:"message"`
+	Severity string `json:"severity"`
+	Path     string `json:"path,omitempty"`
+}
+
+// MigrationReport accompanies imported canonical Carve source.
+type MigrationReport struct {
+	SourceFormat string                `json:"sourceFormat,omitempty"`
+	Mode         string                `json:"mode,omitempty"`
+	Adapter      string                `json:"adapter,omitempty"`
+	Diagnostics  []MigrationDiagnostic `json:"diagnostics"`
+}
+
+// MigrationResult is the shared binding result for HTML and Markdown imports.
+type MigrationResult struct {
+	Value  string          `json:"value"`
+	Report MigrationReport `json:"report"`
+}
+
+// FromHTML imports HTML in safe mode and returns canonical Carve plus its loss report.
+func FromHTML(source string) (MigrationResult, error) {
+	return FromHTMLContext(context.Background(), source)
+}
+
+// FromHTMLContext is FromHTML with caller-controlled cancellation.
+func FromHTMLContext(ctx context.Context, source string) (MigrationResult, error) {
+	eng, err := loadEngine()
+	if err != nil {
+		return MigrationResult{}, err
+	}
+	out, status, err := runEngine(
+		ctx,
+		eng,
+		[]string{"carve", "migrate", "--from", "html", "--mode", "safe", "--report", "-"},
+		source,
+	)
+	if err != nil {
+		return MigrationResult{}, err
+	}
+	if status != 0 {
+		return MigrationResult{}, fmt.Errorf("carve: HTML import failed: %s", out.stderr)
+	}
+	var report MigrationReport
+	if err := json.Unmarshal([]byte(out.stderr), &report); err != nil {
+		return MigrationResult{}, fmt.Errorf("carve: invalid HTML import report: %w", err)
+	}
+	if report.Diagnostics == nil {
+		report.Diagnostics = []MigrationDiagnostic{}
+	}
+	return MigrationResult{Value: out.stdout, Report: report}, nil
+}
+
+// FromMarkdown imports Markdown into canonical Carve.
+func FromMarkdown(source string) (MigrationResult, error) {
+	return FromMarkdownContext(context.Background(), source)
+}
+
+// FromMarkdownContext is FromMarkdown with caller-controlled cancellation.
+func FromMarkdownContext(ctx context.Context, source string) (MigrationResult, error) {
+	eng, err := loadEngine()
+	if err != nil {
+		return MigrationResult{}, err
+	}
+	out, status, err := runEngine(
+		ctx,
+		eng,
+		[]string{"carve", "migrate", "--from", "markdown"},
+		source,
+	)
+	if err != nil {
+		return MigrationResult{}, err
+	}
+	if status != 0 {
+		return MigrationResult{}, fmt.Errorf("carve: Markdown import failed: %s", out.stderr)
+	}
+	return MigrationResult{
+		Value: out.stdout,
+		Report: MigrationReport{
+			SourceFormat: "markdown",
+			Diagnostics:  []MigrationDiagnostic{},
+		},
+	}, nil
+}
+
 // Render renders Carve source to the given format with the given options.
 //
 // The named helpers (ToHTML, ToMarkdown, ToPlainText, ToANSI, ToCarve) cover

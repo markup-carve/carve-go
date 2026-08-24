@@ -85,6 +85,10 @@ func ToANSIContext(ctx context.Context, source string) (string, error)
 func ToCarve(source string) (string, error)
 func ToCarveContext(ctx context.Context, source string) (string, error)
 
+// Import foreign markup into canonical Carve with a machine-readable report.
+func FromHTML(source string) (MigrationResult, error)
+func FromMarkdown(source string) (MigrationResult, error)
+
 // Render is the general form, for a non-HTML format WITH options.
 func Render(source string, format OutputFormat, opts Options) (string, error)
 func RenderContext(ctx context.Context, source string, format OutputFormat, opts Options) (string, error)
