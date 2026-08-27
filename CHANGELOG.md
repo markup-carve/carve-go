@@ -9,6 +9,8 @@ line of Go changing, so rebuilds get an entry of their own.
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-08-27
+
 ### Fixed
 
 - An over-cap document under a `Profile` is an **error**, not an empty render
@@ -20,15 +22,20 @@ line of Go changing, so rebuilds get an entry of their own.
 
 ### Changed
 
-- Rebuild the embedded engine from carve-rs `a33c42a` onto
-  `3dbaf64eb9387b807771ec4d3a46a2557b20dd2a`, 79 commits. Beyond the refusal
+- Rebuild the embedded engine from carve-rs `a33c42a` onto released carve-rs
+  0.1.4 (`2e9c43f2`), 250 commits. Beyond the refusal
   above, the rendering changes an existing document can see are carve-rs' own
   `Unreleased` section - among them: `=>` is no longer an arrow and `<==` is the
   canonical left double arrow, a hyphen run opening a word is a flag rather than
   a dash, a table cell's marker run must be followed by a space, `<thead>` and
   `<tfoot>` write one row per line, and diagrams, tab sets, code groups and the
-  footnote/index back-links carry accessible names (PART 9 §16a).
-- The spec corpus this artifact renders byte-identically is 1341 documents.
+  footnote/index back-links carry accessible names (PART 9 §16a). The final
+  release rebuild also includes typed citation items, published block-image
+  promotion, the `{empty}` spelling for an empty definition body, and the
+  definition/footnote/list continuation-column fixes from carve-rs 0.1.4.
+- The embedded artifact renders all 1538 mandatory documents at the spec
+  commit carve-rs 0.1.4 pins byte-identically, including the AST vocabulary and
+  schema-field checks.
 
 ### Added
 
