@@ -89,6 +89,11 @@ func ToCarveContext(ctx context.Context, source string) (string, error)
 func FromHTML(source string) (MigrationResult, error)
 func FromMarkdown(source string) (MigrationResult, error)
 
+// Reports use schema version 2. Fidelity is preserved, normalized, degraded,
+// or dropped; confidence is exact, inferred, or fallback. Markdown currently
+// reports dropped/fallback conservatively because its engine path does not
+// expose construct-level fidelity.
+
 // Render is the general form, for a non-HTML format WITH options.
 func Render(source string, format OutputFormat, opts Options) (string, error)
 func RenderContext(ctx context.Context, source string, format OutputFormat, opts Options) (string, error)

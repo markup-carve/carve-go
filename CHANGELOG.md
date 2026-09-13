@@ -9,6 +9,15 @@ line of Go changing, so rebuilds get an entry of their own.
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** Migration reports use schema version 2 and classify importer outcomes as
+  preserved, normalized, degraded, or dropped with explicit confidence.
+- Markdown reports explicitly mark construct-level fidelity as unverified
+  on every import, using dropped/fallback as a conservative worst-case gate,
+  until the embedded engine exposes native Markdown diagnostics. This replaces
+  the previous empty diagnostics array.
+
 ## [0.1.2] - 2026-08-27
 
 ### Fixed
