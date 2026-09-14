@@ -345,21 +345,25 @@ func ToCarveContext(ctx context.Context, source string) (string, error) {
 	return RenderContext(ctx, source, OutputCarve, Options{})
 }
 
-// MigrationDiagnostic describes one observable loss or normalization made by
-// an importer.
+// MigrationDiagnostic describes one importer fidelity outcome or limitation.
 type MigrationDiagnostic struct {
-	Code     string `json:"code"`
-	Message  string `json:"message"`
-	Severity string `json:"severity"`
-	Path     string `json:"path,omitempty"`
+	Code       string `json:"code"`
+	Message    string `json:"message"`
+	Severity   string `json:"severity"`
+	Fidelity   string `json:"fidelity"`
+	Confidence string `json:"confidence"`
+	Path       string `json:"path,omitempty"`
 }
 
-// MigrationReport accompanies imported canonical Carve source.
+// MigrationReport accompanies imported canonical Carve source. Schema version
+// 2 uses fidelity values preserved, normalized, degraded, and dropped, and
+// confidence values exact, inferred, and fallback.
 type MigrationReport struct {
-	SourceFormat string                `json:"sourceFormat,omitempty"`
-	Mode         string                `json:"mode,omitempty"`
-	Adapter      string                `json:"adapter,omitempty"`
-	Diagnostics  []MigrationDiagnostic `json:"diagnostics"`
+	SchemaVersion int                   `json:"schemaVersion"`
+	SourceFormat  string                `json:"sourceFormat,omitempty"`
+	Mode          string                `json:"mode,omitempty"`
+	Adapter       string                `json:"adapter,omitempty"`
+	Diagnostics   []MigrationDiagnostic `json:"diagnostics"`
 }
 
 // MigrationResult is the shared binding result for HTML and Markdown imports.
@@ -391,14 +395,47 @@ func FromHTMLContext(ctx context.Context, source string) (MigrationResult, error
 	if status != 0 {
 		return MigrationResult{}, fmt.Errorf("carve: HTML import failed: %s", out.stderr)
 	}
-	var report MigrationReport
-	if err := json.Unmarshal([]byte(out.stderr), &report); err != nil {
+	var engineReport struct {
+		Mode        string                `json:"mode"`
+		Adapter     string                `json:"adapter"`
+		Diagnostics []MigrationDiagnostic `json:"diagnostics"`
+	}
+	if err := json.Unmarshal([]byte(out.stderr), &engineReport); err != nil {
 		return MigrationResult{}, fmt.Errorf("carve: invalid HTML import report: %w", err)
+	}
+	report := MigrationReport{
+		SchemaVersion: 2,
+		SourceFormat:  "html",
+		Mode:          engineReport.Mode,
+		Adapter:       engineReport.Adapter,
+		Diagnostics:   engineReport.Diagnostics,
 	}
 	if report.Diagnostics == nil {
 		report.Diagnostics = []MigrationDiagnostic{}
 	}
+	for i := range report.Diagnostics {
+		d := &report.Diagnostics[i]
+		d.Fidelity, d.Confidence = classifyHTMLDiagnostic(d.Code)
+	}
 	return MigrationResult{Value: out.stdout, Report: report}, nil
+}
+
+func classifyHTMLDiagnostic(code string) (fidelity, confidence string) {
+	switch code {
+	case "element-dropped", "attribute-dropped", "structure-unspellable":
+		return "dropped", "exact"
+	case "element-unwrapped", "style-unmapped", "table-degraded", "raw-preserved":
+		// Unwrapping can merge or remove semantics even when its text survives.
+		return "degraded", "exact"
+	case "encoding-assumed":
+		return "degraded", "inferred"
+	case "diagnostics-truncated":
+		return "dropped", "fallback"
+	case "attribute-preserved":
+		return "preserved", "exact"
+	default:
+		return "dropped", "fallback"
+	}
 }
 
 // FromMarkdown imports Markdown into canonical Carve.
@@ -427,8 +464,15 @@ func FromMarkdownContext(ctx context.Context, source string) (MigrationResult, e
 	return MigrationResult{
 		Value: out.stdout,
 		Report: MigrationReport{
-			SourceFormat: "markdown",
-			Diagnostics:  []MigrationDiagnostic{},
+			SchemaVersion: 2,
+			SourceFormat:  "markdown",
+			Diagnostics: []MigrationDiagnostic{{
+				Code:       "fidelity-unverified",
+				Message:    "Fidelity was not reported by the embedded Markdown importer; dropped is a conservative worst-case release-gate classification",
+				Severity:   "warning",
+				Fidelity:   "dropped",
+				Confidence: "fallback",
+			}},
 		},
 	}, nil
 }
