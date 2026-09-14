@@ -45,12 +45,11 @@ func TestHTMLDiagnosticClassification(t *testing.T) {
 		"element-unwrapped":     {"degraded", "exact"},
 		"style-unmapped":        {"degraded", "exact"},
 		"table-degraded":        {"degraded", "exact"},
-		"structure-split":       {"degraded", "exact"},
 		"encoding-assumed":      {"degraded", "inferred"},
-		"diagnostics-truncated": {"degraded", "fallback"},
+		"diagnostics-truncated": {"dropped", "fallback"},
 		"attribute-preserved":   {"preserved", "exact"},
-		"raw-preserved":         {"preserved", "exact"},
-		"future-code":           {"degraded", "fallback"},
+		"raw-preserved":         {"degraded", "exact"},
+		"future-code":           {"dropped", "fallback"},
 	}
 	for code, want := range tests {
 		fidelity, confidence := classifyHTMLDiagnostic(code)

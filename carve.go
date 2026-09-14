@@ -424,17 +424,17 @@ func classifyHTMLDiagnostic(code string) (fidelity, confidence string) {
 	switch code {
 	case "element-dropped", "attribute-dropped", "structure-unspellable":
 		return "dropped", "exact"
-	case "element-unwrapped", "style-unmapped", "table-degraded", "structure-split":
+	case "element-unwrapped", "style-unmapped", "table-degraded", "raw-preserved":
 		// Unwrapping can merge or remove semantics even when its text survives.
 		return "degraded", "exact"
 	case "encoding-assumed":
 		return "degraded", "inferred"
 	case "diagnostics-truncated":
-		return "degraded", "fallback"
-	case "attribute-preserved", "raw-preserved":
+		return "dropped", "fallback"
+	case "attribute-preserved":
 		return "preserved", "exact"
 	default:
-		return "degraded", "fallback"
+		return "dropped", "fallback"
 	}
 }
 
