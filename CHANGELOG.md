@@ -9,7 +9,19 @@ line of Go changing, so rebuilds get an entry of their own.
 
 ## [Unreleased]
 
+### Added
+
+- `RenderWithIncludes` expands `{{ path }}` directives against a caller-supplied
+  containment root, returning the rendered output, the per-directive warnings and
+  the dependency list a host watches for rebuilds (markup-carve/carve-go#64).
+  Every other entry point still leaves directives literal.
+
 ### Changed
+
+- Engine rebuilt from carve-rs `2e9c43f2` to `cc41c8ac`, which is where the
+  include pass lives. 41 of 1695 corpus documents changed output, all of them
+  from wrong to right; the artifact is now byte-identical on the whole corpus at
+  the spec it pins.
 
 - **Breaking:** Migration reports use schema version 2 and classify importer outcomes as
   preserved, normalized, degraded, or dropped with explicit confidence. Opaque

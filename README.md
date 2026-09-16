@@ -360,6 +360,55 @@ carve-py #1, carve-rb #1).
 > is not part of carve-go's static behavior; spoiler reveal and `details`
 > opening are the interactive-flatten cases this engine actually covers.
 
+## File inclusion
+
+`{{ path }}` directives expand only when you ask for it. Every other entry point
+in this package leaves them literal, which is what the conformance corpus pins.
+
+```go
+res, err := carve.RenderWithIncludes(body, carve.OutputHTML, carve.Options{},
+    carve.Include{
+        Root:       "/srv/site/content",           // containment root, absolute
+        SourcePath: "/srv/site/content/posts/a.crv", // the document's own path
+    })
+// res.Output, res.Warnings, res.Dependencies
+```
+
+`Root` bounds the expansion (spec I10) and must be **absolute**. A relative one
+is refused rather than absolutized: every canonicalizer resolves a relative path
+against the process working directory, which is the value section 19 forbids
+containment defaulting to.
+
+`SourcePath` must be absolute and inside `Root`. Relative directives resolve
+against its *directory*, so `{{ ./sibling.crv }}` finds the file next to the
+document. The file at `SourcePath` need not hold the source you pass: carve-go
+serves your `source` argument for that one path, so a caller that stripped front
+matter first still gets correct relative resolution.
+
+`res.Dependencies` is the section I11 report a host watches for rebuilds. Read
+targets carry their host path; refused ones carry the directive path as written,
+because no host path was ever established for them. The read half is complete.
+The refused half is read off the warnings and is capped with them, so a result
+with `SuppressedWarnings > 0` should be treated as "rebuild unconditionally".
+
+`res.Warnings` carries one entry per degraded directive, each with a stable rule
+id (`include-unresolved`, `include-cycle`, `include-depth`, ...). A degraded
+directive stays literal in the output; inclusion never drops one silently. The
+messages name no host path: "outside the root" and "not there" both surface as
+`include-unresolved` so a rendered page cannot report the difference.
+
+The engine's section 19 limits apply with their spec defaults and are not
+configurable from Go: depth 16, a byte budget of max(1 MB, 8x the root source),
+1000 resolver calls, 100 retained warnings, and a 4 MiB per-file read cap.
+
+> [!IMPORTANT]
+> `Root` is mounted into the guest as its only filesystem, but **the mount is
+> not what enforces containment**. A wazero preopen bounds which paths the guest
+> can name; it does not stop a symlink inside the tree from reaching outside it.
+> The refusal comes from the engine's own resolver, which canonicalizes each
+> candidate and compares it against the canonical root before opening anything.
+> Treat inclusion as a feature for trees you control, not for untrusted input.
+
 ## How it works
 
 - The wasm module is compiled **once** (lazily, on first call) and cached for
