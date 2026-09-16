@@ -506,8 +506,26 @@ func RenderContext(ctx context.Context, source string, format OutputFormat, opts
 		return "", err
 	}
 
-	// argv[0] is the program name; the engine reads source from stdin when no
-	// file argument is given.
+	args, err := renderArgs(format, opts)
+	if err != nil {
+		return "", err
+	}
+
+	out, code, err := runEngine(ctx, eng, args, source)
+	if err != nil {
+		return "", err
+	}
+	if code != 0 {
+		return "", fmt.Errorf("carve: engine exited with code %d: %s", code, out.stderr)
+	}
+	return out.stdout, nil
+}
+
+// renderArgs builds the engine argument list for one render.
+//
+// argv[0] is the program name; the engine reads source from stdin when no file
+// argument is given.
+func renderArgs(format OutputFormat, opts Options) ([]string, error) {
 	args := []string{"carve", format.flag()}
 	if opts.Static {
 		args = append(args, "--static")
@@ -527,18 +545,9 @@ func RenderContext(ctx context.Context, source string, format OutputFormat, opts
 	}
 	symArgs, err := symbolArgs(opts.Symbols)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	args = append(args, symArgs...)
-
-	out, code, err := runEngine(ctx, eng, args, source)
-	if err != nil {
-		return "", err
-	}
-	if code != 0 {
-		return "", fmt.Errorf("carve: engine exited with code %d: %s", code, out.stderr)
-	}
-	return out.stdout, nil
+	return append(args, symArgs...), nil
 }
 
 // ParseAST parses Carve source and returns its AST as JSON.
@@ -674,6 +683,22 @@ func runEngine(
 	args []string,
 	source string,
 ) (engineOutput, int, error) {
+	return runEngineFS(ctx, eng, args, source, nil)
+}
+
+// runEngineFS is runEngine with an optional guest filesystem.
+//
+// Every render but include expansion passes nil, which leaves the guest with NO
+// filesystem at all: the engine is driven over stdio and can open nothing. The
+// include pass is the one caller that mounts a directory, and it mounts exactly
+// the containment root it was given (see includes.go).
+func runEngineFS(
+	ctx context.Context,
+	eng *compiledEngine,
+	args []string,
+	source string,
+	fsCfg wazero.FSConfig,
+) (engineOutput, int, error) {
 	var stdout, stderr bytes.Buffer
 
 	config := wazero.NewModuleConfig().
@@ -684,6 +709,9 @@ func runEngine(
 		// Anonymous module name avoids "module already instantiated"
 		// collisions when called concurrently.
 		WithName("")
+	if fsCfg != nil {
+		config = config.WithFSConfig(fsCfg)
+	}
 
 	mod, err := eng.runtime.InstantiateModule(ctx, eng.module, config)
 	out := func() engineOutput {
