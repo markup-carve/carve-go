@@ -9,6 +9,8 @@ line of Go changing, so rebuilds get an entry of their own.
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-09-19
+
 ### Added
 
 - `RenderWithIncludes` expands `{{ path }}` directives against a caller-supplied
@@ -18,10 +20,19 @@ line of Go changing, so rebuilds get an entry of their own.
 
 ### Changed
 
-- Engine rebuilt from carve-rs `2e9c43f2` to `cc41c8ac`, which is where the
-  include pass lives. 41 of 1695 corpus documents changed output, all of them
-  from wrong to right; the artifact is now byte-identical on the whole corpus at
-  the spec it pins.
+- Engine rebuilt from carve-rs `2e9c43f2` to released 0.1.6 (`d7837249`). The
+  first half of that range is where the include pass lives, and it changed 41 of
+  1695 corpus documents, all of them from wrong to right. The second half brings
+  the 0.1.6 writer and parser fixes: the Markdown and Carve writers escape what
+  would reopen a construct on the way back in, and parsing tightens around
+  braced inlines, forced closers, escaped markers, adjacent links, blank table
+  rows and a code span's closer. The artifact is byte-identical on the whole
+  corpus at the spec it pins, 1740 of 1740 documents.
+
+- **Breaking:** A substitution node in the tree carries `old` and `new` as
+  arrays of inline nodes, where it carried the strings `oldText` and `newText`.
+  A caller reading that node walks the halves instead of reading them
+  (markup-carve/carve-rs#1756).
 
 - **Breaking:** Migration reports use schema version 2 and classify importer outcomes as
   preserved, normalized, degraded, or dropped with explicit confidence. Opaque
@@ -110,6 +121,8 @@ First release. `ToHTML` and the AST surface over a carve-rs engine embedded as
 WebAssembly and driven with wazero, so the module has no cgo and no external
 process.
 
-[Unreleased]: https://github.com/markup-carve/carve-go/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/markup-carve/carve-go/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/markup-carve/carve-go/compare/v0.1.2...v0.1.3
+[0.1.2]: https://github.com/markup-carve/carve-go/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/markup-carve/carve-go/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/markup-carve/carve-go/releases/tag/v0.1.0
