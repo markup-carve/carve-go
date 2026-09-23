@@ -212,7 +212,7 @@ type Options struct {
 // It uses context.Background() and is therefore unbounded in time. For
 // untrusted input, prefer ToHTMLContext with a deadline so a pathological
 // (super-linear) document cannot occupy a goroutine indefinitely; see the
-// "Resource limits and untrusted input" section of the package README.
+// "Resource limits and untrusted input" section of docs/reference.md.
 func ToHTML(source string) (string, error) {
 	return ToHTMLContext(context.Background(), source)
 }
