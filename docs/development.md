@@ -10,7 +10,7 @@ module needs:
 - writes rendered **HTML to stdout** (the default `--html` format),
 - appends a single trailing newline if the output lacks one,
 - accepts `--static` and `--extensions` for the
-  [static render mode](../README.md#static-render-mode).
+  [static render mode](reference.md#static-render-mode).
 
 The carve-rs revision the committed `.wasm` was built from is recorded in
 [`internal/wasm/REV`](../internal/wasm/REV), and what those bytes hash to in
