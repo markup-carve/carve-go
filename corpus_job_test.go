@@ -5,7 +5,9 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -108,32 +110,49 @@ func corpusGatedTests(t *testing.T) []string {
 
 // Every `go test` invocation that runs with CARVE_SPEC_CORPUS set.
 //
-// ALL of them, not the first. There are two now - `corpus` measures against the
-// spec commit the embedded engine pins and gates on it, `corpus-drift` measures
-// against spec main and only reports - and a scan that stopped at the first
-// occurrence would leave the second free to carry exactly the narrow -run
-// filter this guard exists to forbid. A guard that checks one of two callers is
-// the same defect it was written to close, one job later.
+// ALL of them, not the first. There are three now - ci.yml's `corpus` measures
+// against the spec commit the embedded engine pins and gates on it, its
+// `corpus-drift` measures against spec main and only reports, and tag.yml's
+// gate runs the suite with the corpus live between a tag and the proxy - and a
+// scan that stopped at the first occurrence would leave the others free to
+// carry exactly the narrow -run filter this guard exists to forbid. A guard
+// that checks one of several callers is the same defect it was written to
+// close, one job later.
+//
+// EVERY WORKFLOW, not ci.yml alone. This read one file by name, which was
+// complete while one file was the only one that set the variable; tag.yml made
+// it a guard aimed past its subject. The glob is what keeps a workflow added
+// later inside the assertion without anyone remembering to add its name.
 func corpusJobCommands(t *testing.T) []string {
 	t.Helper()
-	blob, err := os.ReadFile(".github/workflows/ci.yml")
+	paths, err := filepath.Glob(".github/workflows/*.yml")
 	if err != nil {
-		t.Fatalf("reading the workflow: %v", err)
+		t.Fatalf("globbing the workflows: %v", err)
 	}
-	lines := strings.Split(string(blob), "\n")
+	if len(paths) == 0 {
+		t.Fatal("no .github/workflows/*.yml matched, so this scan is reading nothing")
+	}
+	sort.Strings(paths)
 	var commands []string
-	for i, line := range lines {
-		if !strings.Contains(line, "CARVE_SPEC_CORPUS:") {
-			continue
+	for _, path := range paths {
+		blob, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("reading %s: %v", path, err)
 		}
-		command, ok := runCommandAt(lines, i+1)
-		if !ok {
-			t.Fatalf("the step setting CARVE_SPEC_CORPUS at ci.yml:%d has no run: command after it", i+1)
+		lines := strings.Split(string(blob), "\n")
+		for i, line := range lines {
+			if !strings.Contains(line, "CARVE_SPEC_CORPUS:") {
+				continue
+			}
+			command, ok := runCommandAt(lines, i+1)
+			if !ok {
+				t.Fatalf("the step setting CARVE_SPEC_CORPUS at %s:%d has no run: command after it", path, i+1)
+			}
+			commands = append(commands, command)
 		}
-		commands = append(commands, command)
 	}
 	if len(commands) == 0 {
-		t.Fatal("no job in ci.yml sets CARVE_SPEC_CORPUS, so the corpus tests cannot run at all")
+		t.Fatal("no workflow sets CARVE_SPEC_CORPUS, so the corpus tests cannot run at all")
 	}
 	return commands
 }
@@ -193,7 +212,7 @@ func TestTheCorpusJobRunsEveryCorpusGatedTest(t *testing.T) {
 		}
 		if pattern == "" {
 			// No filter: everything the package defines runs. This is the shape
-			// both corpus steps have today.
+			// every corpus step has today.
 			continue
 		}
 
