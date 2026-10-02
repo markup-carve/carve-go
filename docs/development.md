@@ -128,6 +128,29 @@ digest to `internal/wasm/carve.wasm.sha256`, so the artifact identifies itself
 and release notes do not have to carry the sha by hand. Commit all three
 together; CI checks the digest against the committed bytes.
 
+### Cutting a release
+
+A Go module version is the tag name verbatim, and `proxy.golang.org` caches that
+version immutably as soon as anything fetches it. There is no yank, no
+re-upload and no deprecation: a bad tag can only be superseded. So **rehearse
+before the ref exists**.
+
+Run the `Tag gate` workflow by hand against the commit you mean to tag, giving
+it that tag name:
+
+```bash
+gh workflow run tag.yml --repo markup-carve/carve-go --ref main -f tag=v0.1.4
+```
+
+It refuses the tag unless the name agrees with `CHANGELOG.md` (the newest
+released heading, its date, its link definition and the `[Unreleased]` compare
+base), the commit is an ancestor of `main`, the whole suite passes with the spec
+corpus live, `internal/wasm/REV` names a real carve-rs commit whose digest
+matches the committed artifact, and the embedded WebAssembly renders
+byte-identically to the native engine built from that same revision. The same
+job runs again on the tag push, so a tag cut past the rehearsal is still
+caught - after the proxy may already have the bytes.
+
 ## Testing
 
 ```bash
@@ -150,4 +173,6 @@ native CLI run with `--html --static --extensions`.
 
 The byte-identical tests auto-skip if the native `carve` binary is not found
 (the static one also skips unless the binary advertises `--static`); set
-`CARVE_BIN=/path/to/carve` to point it explicitly.
+`CARVE_BIN=/path/to/carve` to point it explicitly. The CI jobs leave it unset,
+so those two run only in the tag gate, which builds the CLI from the revision
+`internal/wasm/REV` names and fails if either reports a skip.

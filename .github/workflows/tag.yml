@@ -1,0 +1,197 @@
+name: Tag gate
+
+# Nothing in this repository used to fire on a tag: ci.yml runs on pushes and
+# pull requests only, so a tag could be cut from any commit on any branch and
+# the first thing to notice would be somebody's `go get`.
+#
+# That is worse here than in a repository with a registry step to gate. A Go
+# module version is the tag name verbatim, and proxy.golang.org caches that
+# version immutably as soon as anything fetches it - no yank, no re-upload, no
+# deprecation takes the bytes back. The tag is the publish and it cannot be
+# corrected, only superseded. markup-carve/carve-pdf cut a 0.1.0 from a commit
+# that still carried absolute host paths as engine fallbacks and had to
+# withdraw it; this repository shipped three releases whose embedded wasm named
+# one developer's home directory 96 times.
+#
+# The checks that catch a bad tag already existed. They were simply not between
+# the tag and the proxy.
+
+on:
+  push:
+    tags: ['*']
+  # Rehearsal. The answer has to be readable before the ref exists, because on
+  # an immutable publish a dry run is the only safe order.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The tag name to check this ref against (e.g. v0.1.4)
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: version, ancestry and suite
+    runs-on: ubuntu-latest
+    # Without this, a `run:` step gets `bash -e` and NO pipefail, so
+    # `go test | tee` would report tee's exit status and a failing suite would
+    # leave this gate green. `shell: bash` is what adds `-o pipefail`.
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # fetch-depth: 0 for the ancestry check below, which needs main's history
+      # rather than one commit's tree.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # Both sources are attacker-controllable: a git ref name may contain `$`
+      # and backticks, and a dispatch input is free text. They travel through
+      # the environment rather than being interpolated into the script, because
+      # an interpolated value is shell source and runs before any check of it
+      # can refuse it. The character class is deliberately wider than vX.Y.Z -
+      # version-gate.sh makes that judgement and says why - and narrow enough
+      # that nothing here reaches a shell or splits a line of $GITHUB_OUTPUT.
+      - name: Resolve the tag under test
+        id: tag
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          if [ "$REF_TYPE" = tag ]; then
+            tag="$REF_NAME"
+          else
+            tag="$INPUT_TAG"
+          fi
+          case "$tag" in
+            ""|*[!A-Za-z0-9._+-]*)
+              echo "::error::the tag name [$tag] holds characters a version tag cannot"
+              exit 1
+              ;;
+          esac
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      # First, because it needs neither Go nor an engine and a disagreement
+      # here is not worth an install.
+      - name: The tag agrees with CHANGELOG.md
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: ./tools/version-gate.sh "$TAG"
+
+      - name: The tagged commit is an ancestor of main
+        run: |
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor HEAD FETCH_HEAD; then
+            # No >&2: the runner reads workflow commands from stdout only, so
+            # an ::error:: on stderr is printed and never annotated.
+            echo "::error::$(git rev-parse HEAD) is not an ancestor of main, so this tag would" \
+                 "publish code that was never reviewed on the default branch"
+            exit 1
+          fi
+          echo "$(git rev-parse HEAD) is an ancestor of main ($(git rev-parse --short FETCH_HEAD))"
+
+      # fetch-depth: 0 so REV can be read as a tree, and so the pin guard's
+      # own `merge-base --is-ancestor` has the history it needs.
+      - name: Check out carve-rs
+        uses: actions/checkout@v7
+        with:
+          repository: markup-carve/carve-rs
+          path: carve-rs
+          fetch-depth: 0
+
+      # As ci.yml runs it, --artifact-digest included. A tag whose
+      # carve.wasm.sha256 disagrees with the committed bytes ships a module
+      # whose own digest file is wrong, and a consumer's build is what trusts
+      # that pair.
+      - name: Check the recorded engine revision
+        run: |
+          python3 carve-rs/tools/check-engine-pin.py \
+            --engine carve-rs --github \
+            --form rev-file --file internal/wasm/REV \
+            --artifact internal/wasm/carve.wasm \
+            --artifact-digest internal/wasm/carve.wasm.sha256
+
+      - name: Resolve the spec commit the embedded engine pins
+        id: pin
+        run: |
+          rev="$(cat internal/wasm/REV)"
+          spec="$(git -C carve-rs ls-tree "$rev" tests/spec | awk '{print $3}' || true)"
+          if [ -z "$spec" ]; then
+            echo "internal/wasm/REV names $rev, which has no tests/spec gitlink in carve-rs;" >&2
+            echo "there is no spec commit to hold this artifact to." >&2
+            exit 1
+          fi
+          echo "carve-rs $rev pins spec $spec"
+          echo "spec=$spec" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the spec corpus that engine was written against
+        uses: actions/checkout@v7
+        with:
+          repository: markup-carve/carve
+          ref: ${{ steps.pin.outputs.spec }}
+          path: spec
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: stable
+
+      # TestToHTML_ByteIdenticalToNative and TestToHTMLStatic_ByteIdenticalToNative
+      # are the only checks that compare the embedded WebAssembly against the
+      # native engine, and they skip in every ci.yml job because CARVE_BIN is
+      # unset. Building the CLI is too slow per push and affordable once per
+      # release, which makes a tag the one place that comparison can live.
+      #
+      # It MUST be the revision internal/wasm/REV names. A native side built
+      # from anything else cannot tell "the wasm is wrong" from "my reference is
+      # old", and it reports the first - that is why the test helper refuses to
+      # pick a binary off the filesystem itself.
+      - name: Build the native carve CLI at the embedded revision
+        run: |
+          rev="$(cat internal/wasm/REV)"
+          git -C carve-rs checkout --detach "$rev"
+          cargo build --release --manifest-path carve-rs/Cargo.toml --bin carve
+          echo "CARVE_BIN=$GITHUB_WORKSPACE/carve-rs/target/release/carve" >> "$GITHUB_ENV"
+
+      # Same command and same absence of a -run filter as ci.yml's corpus job,
+      # so a corpus-gated test added later is covered here too;
+      # TestTheCorpusJobRunsEveryCorpusGatedTest holds every workflow that sets
+      # CARVE_SPEC_CORPUS to that shape, this one included.
+      - name: Suite, with the corpus and the native engine live
+        env:
+          CARVE_SPEC_CORPUS: ${{ github.workspace }}/spec/tests/corpus
+        run: go test -v ./... 2>&1 | tee suite.log
+
+      # A skipped test reports success over the thing it never compared, and
+      # both native checks skip silently on an unset CARVE_BIN. Requiring the
+      # PASS lines is what makes the step above evidence of a comparison rather
+      # than of an exit status.
+      - name: The gated comparisons ran rather than skipped
+        run: |
+          bad=0
+          for test in TestSpecCorpus TestToHTML_ByteIdenticalToNative TestToHTMLStatic_ByteIdenticalToNative; do
+            if grep -qE "^ *--- PASS: $test \(" suite.log; then
+              echo "ran: $test"
+            else
+              # `|| true` on both greps below: GitHub runs a step with
+              # `set -eo pipefail`, so a non-matching grep inside a command
+              # substitution would abort the step before it could say why.
+              outcome="$(grep -oE -- "--- (PASS|FAIL|SKIP): $test \(.*" suite.log | head -1 || true)"
+              echo "::error::$test did not pass in this run: ${outcome:-it produced no result line at all}"
+              bad=1
+            fi
+          done
+          # Evidence of a measurement rather than of an exit status: the corpus
+          # test can pass over an empty directory far more easily than it can
+          # print a count it did not reach.
+          identical="$(grep -oE '[0-9]+ corpus cases byte-identical' suite.log | tail -1 || true)"
+          if [ -z "$identical" ]; then
+            echo "::error::the run logged no byte-identical corpus count, so nothing was measured against the spec"
+            bad=1
+          else
+            echo "corpus: $identical"
+          fi
+          exit "$bad"

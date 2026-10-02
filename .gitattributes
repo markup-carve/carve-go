@@ -13,4 +13,5 @@
 /.gitattributes export-ignore
 /.gitignore export-ignore
 /build-wasm.sh export-ignore
+/tools export-ignore
 *_test.go export-ignore
