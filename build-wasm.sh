@@ -28,18 +28,28 @@
 # Usage:
 #   CARVE_RS=/path/to/carve-rs ./build-wasm.sh
 #
-# CARVE_RS defaults to the sibling checkout used during development, which only
-# exists on one machine. Anywhere else, clone carve-rs and point CARVE_RS at it:
-#   git clone https://github.com/markup-carve/carve-rs /tmp/carve-rs-build
-#   CARVE_RS=/tmp/carve-rs-build ./build-wasm.sh
+# With CARVE_RS unset, a carve-rs checkout sitting beside this one is used. The
+# default used to be one developer's absolute path, which published a directory
+# layout and, worse, meant the fallback nobody else could reach was a fallback
+# nobody else tested. A sibling is resolved from this script's own location, so
+# it is the same shape on every machine.
 set -euo pipefail
 
-CARVE_RS="${CARVE_RS:-/media/mark/data/work/git/carve-rs}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUT="${HERE}/internal/wasm/carve.wasm"
 
+CARVE_RS_SOURCE="CARVE_RS"
+if [ -z "${CARVE_RS:-}" ]; then
+  CARVE_RS="$(dirname "${HERE}")/carve-rs"
+  CARVE_RS_SOURCE="sibling default"
+fi
+
 if [ ! -f "${CARVE_RS}/Cargo.toml" ]; then
-  echo "error: carve-rs not found at ${CARVE_RS} (set CARVE_RS=...)" >&2
+  echo "error: no carve-rs checkout at ${CARVE_RS} (${CARVE_RS_SOURCE}): no Cargo.toml there." >&2
+  echo "       Clone carve-rs and point CARVE_RS at it:" >&2
+  echo "         git clone https://github.com/markup-carve/carve-rs /tmp/carve-rs-build" >&2
+  echo "         CARVE_RS=/tmp/carve-rs-build $0" >&2
+  echo "       Or put a carve-rs checkout beside this one, at $(dirname "${HERE}")/carve-rs." >&2
   exit 1
 fi
 
@@ -57,7 +67,13 @@ rustup target add wasm32-wasip1
 # exactly the job it exists to do - but REV said something untrue in the
 # meantime, and REV is what the staleness report reads.
 BUILD_DIR="${TMPDIR:-/tmp}/carve-go-wasm-target"
-( cd "${CARVE_RS}" && CARGO_TARGET_DIR="${BUILD_DIR}" cargo build --release --target wasm32-wasip1 --bin carve )
+
+# Remap source prefixes out of the artifact. Rust embeds the build host's paths
+# in panic locations, so the committed carve.wasm carries 96 strings naming the
+# build machine's cargo registry - the same leak this script's old CARVE_RS
+# default was, one layer down and invisible to a text grep.
+REMAP="--remap-path-prefix=${CARVE_RS}=/carve-rs --remap-path-prefix=${CARGO_HOME:-${HOME}/.cargo}=/cargo"
+( cd "${CARVE_RS}" && CARGO_TARGET_DIR="${BUILD_DIR}" RUSTFLAGS="${RUSTFLAGS:-} ${REMAP}" cargo build --release --target wasm32-wasip1 --bin carve )
 WASM="${BUILD_DIR}/wasm32-wasip1/release/carve.wasm"
 
 if [ ! -f "${WASM}" ]; then
