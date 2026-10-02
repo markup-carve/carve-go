@@ -104,9 +104,10 @@ the shipped artifact. The `.gitignore` deliberately does not ignore it.
 
 ### Pinning the engine version when publishing
 
-`CARVE_RS` defaults to a sibling checkout that only exists on one developer's
-machine, so anywhere else point it at a clone. For a published build, check out
-the revision you want to ship first:
+With `CARVE_RS` unset, the script looks for a carve-rs checkout beside this
+one - `../carve-rs`, resolved from the script's own location - and otherwise
+exits with the clone recipe. For a published build, check out the revision you
+want to ship first:
 
 ```bash
 git clone https://github.com/markup-carve/carve-rs /tmp/carve-rs
