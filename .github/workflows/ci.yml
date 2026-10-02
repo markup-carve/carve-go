@@ -18,9 +18,13 @@ on:
     - cron: "35 6 * * *"
   workflow_dispatch:
 
+# Every job declares timeout-minutes. Without one GitHub applies a 360-minute
+# default, roughly 900x the median job in this org, so a hung step burns hours
+# of runner time before anything stops it.
 jobs:
   build-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -75,6 +79,7 @@ jobs:
   # turn this into a loosening rather than a re-aiming.
   corpus:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
 
@@ -147,6 +152,7 @@ jobs:
   # has to have logged either a divergence count or a byte-identical count.
   corpus-drift:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
 
@@ -254,6 +260,7 @@ jobs:
   # cannot fail - see build-wasm.sh for what the digest does and does not buy.
   engine-rev:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
 
