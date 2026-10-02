@@ -69,9 +69,11 @@ rustup target add wasm32-wasip1
 BUILD_DIR="${TMPDIR:-/tmp}/carve-go-wasm-target"
 
 # Remap source prefixes out of the artifact. Rust embeds the build host's paths
-# in panic locations, so the committed carve.wasm carries 96 strings naming the
-# build machine's cargo registry - the same leak this script's old CARVE_RS
-# default was, one layer down and invisible to a text grep.
+# in panic locations, which is how the committed carve.wasm came to carry 96
+# strings naming one machine's cargo registry - the same leak this script's old
+# CARVE_RS default was, one layer down and invisible to a text grep. The
+# artifact committed beside this script was rebuilt under these flags and
+# carries none; TestNoHostPathsInTrackedBinaries holds it that way.
 REMAP="--remap-path-prefix=${CARVE_RS}=/carve-rs --remap-path-prefix=${CARGO_HOME:-${HOME}/.cargo}=/cargo"
 ( cd "${CARVE_RS}" && CARGO_TARGET_DIR="${BUILD_DIR}" RUSTFLAGS="${RUSTFLAGS:-} ${REMAP}" cargo build --release --target wasm32-wasip1 --bin carve )
 WASM="${BUILD_DIR}/wasm32-wasip1/release/carve.wasm"

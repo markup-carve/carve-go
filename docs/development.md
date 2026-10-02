@@ -94,10 +94,18 @@ which runs, in effect:
 ```bash
 rustup target add wasm32-wasip1
 cd "$CARVE_RS"
-cargo build --release --target wasm32-wasip1 --bin carve
+RUSTFLAGS="--remap-path-prefix=$CARVE_RS=/carve-rs --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo" \
+  cargo build --release --target wasm32-wasip1 --bin carve
 cp target/wasm32-wasip1/release/carve.wasm \
    /path/to/go-carve/internal/wasm/carve.wasm
 ```
+
+The `RUSTFLAGS` are not optional. Rust records the path of every file a panic
+could fire in, so without them the artifact names the machine that built it:
+the wasm committed before this was written carried 96 strings pointing at one
+developer's cargo registry. Prefer the script, which passes them for you;
+`TestNoHostPathsInTrackedBinaries` fails the suite if an artifact built without
+them is ever committed.
 
 The `internal/wasm/carve.wasm` file is **committed** to the repository: it is
 the shipped artifact. The `.gitignore` deliberately does not ignore it.
