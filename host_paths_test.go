@@ -18,7 +18,9 @@ import (
 //
 // Grep is not the guard - a sweep greps for the pattern someone already knows.
 // This one fails the suite on any host-rooted absolute path in any tracked
-// text file, so the next one cannot be committed quietly.
+// file, so the next one cannot be committed quietly. Text files are read line
+// by line below; binaries are scanned whole by the arm after it, because a
+// text-only guard is what let the embedded wasm keep 96 of them.
 //
 // A line that genuinely needs such a path (a fixture proving a path does not
 // leak, a documented CI location) carries the marker below on the same line.
@@ -73,6 +75,71 @@ func trackedFiles(t *testing.T) []string {
 	return files
 }
 
+func isBinary(data []byte) bool { return bytes.IndexByte(data, 0) >= 0 }
+
+// scanBinaryForHostPaths returns the distinct offending path prefixes in data,
+// in the order they first appear.
+//
+// The text arm reads tracked files line by line, which is why a host path
+// survived in internal/wasm/carve.wasm for three releases: Rust embeds the
+// build machine's cargo registry in panic locations, and no grep over text
+// files can see them. The remedy is a rebuild under --remap-path-prefix, so
+// what this arm guards is that the rebuilt bytes stay remapped.
+func scanBinaryForHostPaths(pattern *regexp.Regexp, data []byte) []string {
+	var found []string
+	seen := map[string]bool{}
+	for _, m := range pattern.FindAllSubmatch(data, -1) {
+		if hostPathAllowedUsers[string(m[2])] {
+			continue
+		}
+		prefix := string(m[0])
+		if seen[prefix] {
+			continue
+		}
+		seen[prefix] = true
+		found = append(found, prefix)
+	}
+	return found
+}
+
+// binaryFindingCap bounds the report. Distinct prefixes are already
+// deduplicated - the pre-fix carve.wasm held 96 matches of a single one - but a
+// differently built artifact could carry many, and a hundred-line failure
+// buries the point.
+const binaryFindingCap = 8
+
+func TestNoHostPathsInTrackedBinaries(t *testing.T) {
+	pattern := hostPathPattern()
+	var findings []string
+
+	for _, file := range trackedFiles(t) {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatalf("reading tracked file %s: %v", file, err)
+		}
+		if !isBinary(data) {
+			continue
+		}
+		prefixes := scanBinaryForHostPaths(pattern, data)
+		for i, prefix := range prefixes {
+			if i == binaryFindingCap {
+				findings = append(findings, fmt.Sprintf("%s: ...and %d more distinct prefixes", file, len(prefixes)-i))
+				break
+			}
+			findings = append(findings, fmt.Sprintf("%s: %s", file, prefix))
+		}
+	}
+
+	if len(findings) > 0 {
+		t.Errorf("tracked binaries contain host-rooted absolute paths:\n  %s\n\n"+
+			"A committed artifact carries whichever machine built it. Rebuild it with the "+
+			"source prefixes remapped out - for internal/wasm/carve.wasm that is "+
+			"./build-wasm.sh, which passes --remap-path-prefix for both the carve-rs "+
+			"checkout and CARGO_HOME.",
+			strings.Join(findings, "\n  "))
+	}
+}
+
 func TestNoHostPathsInTrackedFiles(t *testing.T) {
 	pattern := hostPathPattern()
 	var findings []string
@@ -82,11 +149,9 @@ func TestNoHostPathsInTrackedFiles(t *testing.T) {
 		if err != nil {
 			t.Fatalf("reading tracked file %s: %v", file, err)
 		}
-		// Binary artifacts are out of scope here: internal/wasm/carve.wasm
-		// carries the build host's cargo paths in its panic locations, which
-		// no edit to a tracked text file can fix. build-wasm.sh passes
-		// --remap-path-prefix so a rebuild stops embedding them.
-		if bytes.IndexByte(data, 0) >= 0 {
+		// Binaries are scanned by TestNoHostPathsInTrackedBinaries instead:
+		// they have no lines to report and no place to put an allow marker.
+		if isBinary(data) {
 			continue
 		}
 		for i, line := range strings.Split(string(data), "\n") {
@@ -139,5 +204,44 @@ func TestHostPathPatternsMatchWhatTheyClaim(t *testing.T) {
 		if match(line) {
 			t.Errorf("guard wrongly flags %q", line)
 		}
+	}
+}
+
+// Same reasoning for the binary arm: a guard whose scanner nobody has watched
+// fire is not evidence. These bytes are shaped like what a wasm artifact
+// actually carries - a path with no newline near it, wedged between NUL bytes
+// and other binary noise, which is precisely what the line-based arm misses.
+func TestBinaryScanMatchesWhatItClaims(t *testing.T) {
+	pattern := hostPathPattern()
+	s := "/"
+
+	leak := []byte("\x00\x07carve-rs" + s + "src" + s + "lib.rs\x00" +
+		s + "home" + s + "someone" + s + ".cargo" + s + "registry" + s + "src\x00\xff")
+	got := scanBinaryForHostPaths(pattern, leak)
+	want := s + "home" + s + "someone" + s
+	if len(got) != 1 || got[0] != want {
+		t.Errorf("binary scan of a leaking artifact = %q, want exactly [%q]", got, want)
+	}
+	if !isBinary(leak) {
+		t.Error("a NUL-bearing artifact must classify as binary, or the text arm claims it")
+	}
+
+	// A remapped artifact keeps the remap targets, which name no machine.
+	clean := []byte("\x00\x07" + s + "carve-rs" + s + "src" + s + "lib.rs\x00" +
+		s + "cargo" + s + "registry" + s + "src" + s + "index.crates.io-1949cf8c6b5b557f\x00\xff")
+	if got := scanBinaryForHostPaths(pattern, clean); got != nil {
+		t.Errorf("binary scan of a remapped artifact = %q, want none", got)
+	}
+
+	// The runner allowance carries over from the text arm.
+	runner := []byte("\x00" + s + "home" + s + "runner" + s + "work" + s + "carve-go\x00")
+	if got := scanBinaryForHostPaths(pattern, runner); got != nil {
+		t.Errorf("binary scan wrongly flags a CI runner path: %q", got)
+	}
+
+	// Distinct prefixes are deduplicated, so 96 matches do not become 96 lines.
+	repeated := bytes.Repeat([]byte("\x00"+s+"home"+s+"someone"+s+".cargo"+s), 30)
+	if got := scanBinaryForHostPaths(pattern, repeated); len(got) != 1 {
+		t.Errorf("binary scan of 30 copies of one prefix = %d findings, want 1", len(got))
 	}
 }
