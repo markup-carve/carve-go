@@ -30,10 +30,14 @@ on:
 permissions:
   contents: read
 
+# Every job declares timeout-minutes. Without one GitHub applies a 360-minute
+# default, roughly 900x the median job in this org, so a hung step burns hours
+# of runner time before anything stops it.
 jobs:
   gate:
     name: version, ancestry and suite
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     # Without this, a `run:` step gets `bash -e` and NO pipefail, so
     # `go test | tee` would report tee's exit status and a failing suite would
     # leave this gate green. `shell: bash` is what adds `-o pipefail`.
