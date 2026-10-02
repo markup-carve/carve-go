@@ -9,6 +9,29 @@ line of Go changing, so rebuilds get an entry of their own.
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-10-02
+
+### Fixed
+
+- The embedded `internal/wasm/carve.wasm` no longer carries the build host's
+  filesystem paths. Up to 0.1.3 it held 96 strings naming one developer's home
+  directory and cargo registry, because Rust records the source path of every
+  file a panic can fire in and a release build keeps them, so every install
+  carried that layout inside the WebAssembly it imports (#70). The artifact was
+  rebuilt under `--remap-path-prefix`, from the carve-rs revision
+  `internal/wasm/REV` already named, so the engine did not move: those 96
+  strings read `/cargo/registry`, and the 1740 mandatory corpus documents still
+  render byte-identically. `TestNoHostPathsInTrackedBinaries` scans tracked
+  binaries whole, which is the arm a line-based guard could not have, and fails
+  the suite on the next one.
+
+- `build-wasm.sh` resolves its carve-rs checkout from the script's own location
+  instead of an absolute path that existed on one machine (#69). The script as
+  shipped now runs wherever a carve-rs checkout sits beside this one, so a
+  reader can rebuild the committed artifact and compare it against its source;
+  when neither that sibling nor `CARVE_RS` resolves, the error names both
+  locations it tried and carries the clone recipe.
+
 ## [0.1.3] - 2026-09-19
 
 ### Added
@@ -121,7 +144,8 @@ First release. `ToHTML` and the AST surface over a carve-rs engine embedded as
 WebAssembly and driven with wazero, so the module has no cgo and no external
 process.
 
-[Unreleased]: https://github.com/markup-carve/carve-go/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/markup-carve/carve-go/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/markup-carve/carve-go/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/markup-carve/carve-go/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/markup-carve/carve-go/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/markup-carve/carve-go/compare/v0.1.0...v0.1.1
