@@ -25,6 +25,28 @@ line of Go changing, so rebuilds get an entry of their own.
 
 ### Added
 
+- `Lint`, `LintContext`, `LintWithOptions` and `LintWithOptionsContext` run the
+  engine's lint pass and return `[]LintFinding` with the path, 1-based position,
+  rule id and message. Findings are not an error: the engine signals them with
+  exit 1 and this package returns them with a nil error, reserving an error for
+  exit 2, which is an unreadable input or an option the engine did not
+  understand. A clean document returns an empty, non-nil slice. `LintOptions`
+  selects extensions for the pass; the bundle changes which rules report, not
+  only how many. The engine has carried `carve lint` since before the previously
+  pinned revision, so every lint rule in the embedded artifact was unobservable
+  from Go until now, and `docs/reference.md` said the subcommand did not exist
+  (#80).
+- `RenderChecked` and `RenderCheckedContext` return the engine's render-loss
+  report beside the output, over `--report-losses`. `CheckedOptions` embeds
+  `Options` and adds `Strict` (`--strict-losses`), `AllowLoss`
+  (`--allow-loss`) and `MaxLosses` (`--max-render-losses`); its zero value
+  reports without refusing anything, so a non-strict checked render returns
+  what `Render` returns plus the report. `MaxLosses` bounds `RenderReport.Losses`
+  and never `RenderReport.TotalLosses`, and is a pointer because the engine
+  accepts 0 for totals with no detail. A strict refusal is a `*RenderLossError`
+  carrying the report. `RenderReport.Raw` keeps the engine's JSON verbatim, and
+  a test fails if the engine emits a field the typed struct does not model
+  (#81).
 - `FromHTMLOptions` and `FromHTMLOptionsContext` take an `ImportOptions` whose
   `Mode` selects the engine's HTML import mode. The argument list hard-coded
   `--mode safe`, so `ImportSemantic` was unreachable and `MigrationReport.Mode`

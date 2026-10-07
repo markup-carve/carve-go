@@ -103,6 +103,12 @@ func FromMarkdown(source string) (MigrationResult, error)
 // the engine's own report; the Markdown channel classifies its own rows, the
 // HTML channel's are classified by code here.
 
+// Lint reports constructs that parse but render wrong. See "Lint".
+func Lint(source string) ([]LintFinding, error)
+
+// RenderChecked is Render plus the engine's loss report. See "Render losses".
+func RenderChecked(source string, format OutputFormat, opts CheckedOptions) (string, RenderReport, error)
+
 // Render is the general form, for a non-HTML format WITH options.
 func Render(source string, format OutputFormat, opts Options) (string, error)
 func RenderContext(ctx context.Context, source string, format OutputFormat, opts Options) (string, error)
@@ -152,12 +158,103 @@ Two boundaries on the non-HTML targets, both measured rather than assumed:
   than the glyph you mapped. A test pins the behavior so a future engine that
   changes it cannot do so silently.
 
-Not available here: **`lint`**. The engine does have the subcommand - `carve
-lint` reads stdin, prints `file:line:col rule - message` for each finding and
-exits 1 when it found any, 0 when it found none and 2 on a bad option - so the
-boundary is not what is missing. This package exposes no binding for it yet, so
-every lint rule the embedded engine carries is unobservable from Go. Tracked in
-[#80](https://github.com/markup-carve/carve-go/issues/80).
+### Lint
+
+`Lint` runs the engine's lint pass, which reports constructs that parse but do
+not reach the page the way the author meant.
+
+```go
+func Lint(source string) ([]LintFinding, error)
+func LintContext(ctx context.Context, source string) ([]LintFinding, error)
+func LintWithOptions(source string, opts LintOptions) ([]LintFinding, error)
+func LintWithOptionsContext(ctx context.Context, source string, opts LintOptions) ([]LintFinding, error)
+
+type LintFinding struct {
+	Path    string // "<stdin>" for source passed here
+	Line    int    // 1-based
+	Column  int    // 1-based
+	Rule    string // the engine's rule id, e.g. broken-fragment-link
+	Message string
+}
+
+type LintOptions struct {
+	Extensions []string // one --extension KEY each; `citations` is the only key the pass takes
+	Bundle     bool     // --extensions
+}
+```
+
+**Findings are the answer, not a failure.** The engine signals findings with
+exit 1 and an unreadable input or an unaccepted option with exit 2, so a
+document with findings returns them with a nil error and only the second is an
+error here. A clean document returns an empty, non-nil slice, so a caller can
+range over the result without a nil check. This is the split `ReadStamp`
+already makes between a question's answer and a failure to ask it.
+
+**`LintOptions.Bundle` changes which findings you get, not only how many.**
+Measured against the embedded artifact: a document whose fragment links match no
+id reports two `broken-fragment-link` findings with the core rules and none with
+the bundle enabled, because the bundle's constructs supply the ids. The zero
+`LintOptions` is the engine's own default, which is the core rules and no
+extension.
+
+The accepted extension keys are not listed in this package. An unaccepted one
+comes back as the engine's own error naming what it knows.
+
+### Render losses
+
+`Render` returns `(string, error)`, which has no slot for a report, so a checked
+render is a second entry point rather than a changed signature.
+
+```go
+func RenderChecked(source string, format OutputFormat, opts CheckedOptions) (string, RenderReport, error)
+func RenderCheckedContext(ctx context.Context, source string, format OutputFormat, opts CheckedOptions) (string, RenderReport, error)
+
+type CheckedOptions struct {
+	Options            // the same Options Render takes
+	Strict    bool     // --strict-losses: refuse the output instead of returning it
+	AllowLoss []string // --allow-loss CODE, repeatable
+	MaxLosses *int     // --max-render-losses; nil means the engine's default of 100
+}
+```
+
+**The zero `CheckedOptions` reports without refusing.** A non-strict checked
+render returns exactly what `Render` returns, plus the report. `Strict` is false,
+`AllowLoss` is empty, and a nil `MaxLosses` leaves the engine's own bound in
+place.
+
+**`MaxLosses` bounds `RenderReport.Losses` and never `RenderReport.TotalLosses`.**
+Reading `len(Losses)` as the number of losses is wrong whenever `Truncated` is
+true - that misreading is
+[markup-carve/carve-wasm#158](https://github.com/markup-carve/carve-wasm/issues/158),
+where a visible array of 20 stood for a real 40. The field is a pointer because
+the engine accepts 0, meaning totals with no detail, which a plain `int` could
+not tell from unset.
+
+**A strict refusal is a `*RenderLossError`** and carries the report, which is
+also returned as the second value, so a caller need not type-assert to find out
+what was lost. The rendered string is empty on that path.
+
+**The allow-list is the engine's.** `--allow-loss` accepts `raw-format-dropped`
+and `ruby-flattened` at the embedded engine and deliberately not
+`destination-denied`, so a strict render of a link to a denied scheme cannot be
+waived. Passing a code the engine does not take is its own usage error rather
+than a list duplicated here.
+
+`RenderReport.Raw` holds the engine's report verbatim, so a field this package
+has not modeled yet is still reachable. A test walks every key the engine emits
+and fails if the typed struct has no field for it, which is the check the
+carve-wasm binding lacked.
+
+**Positions count codepoints, not bytes.** `LossPosition` columns and offsets,
+and `LintFinding.Column`, are in the same unit the rest of the engine's
+positions use. Indexing a Go string with them is wrong for any source holding
+non-ASCII text ahead of the position and can cut a UTF-8 sequence in half;
+convert with `[]rune(source)` first. Measured with a 2-byte and a 4-byte leading
+rune, which report the same column and offset.
+
+Note that the hardening itself is always on: a denied destination renders as
+`href=""` whether or not you ask for a report. What the checked render adds is
+being told.
 
 ### The parsed AST
 
