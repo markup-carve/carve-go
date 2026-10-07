@@ -32,7 +32,8 @@ import (
 // version boundary. It does NOT distinguish two commits of the same version;
 // that hole stays open, and it is narrower than the one this closes.
 
-var engineVersionLine = regexp.MustCompile(`^carve-rs ([0-9]+\.[0-9]+\.[0-9]+)$`)
+// carve-rs main reads X.Y.Z-dev between releases, so a REV on main reports that.
+var engineVersionLine = regexp.MustCompile(`^carve-rs ([0-9]+\.[0-9]+\.[0-9]+(?:-dev)?)$`)
 
 // recordedEngineVersion is the version this repository commits to, read from
 // the file build-wasm.sh writes beside REV.
@@ -107,5 +108,12 @@ func TestTheEngineVersionCheckCanFail(t *testing.T) {
 	m := engineVersionLine.FindStringSubmatch("carve-rs 1.2.3")
 	if m == nil || m[1] != "1.2.3" {
 		t.Fatalf("the version pattern does not capture the version out of a well-formed line: %v", m)
+	}
+	m = engineVersionLine.FindStringSubmatch("carve-rs 1.2.4-dev")
+	if m == nil || m[1] != "1.2.4-dev" {
+		t.Fatalf("the version pattern does not capture a between-releases -dev version: %v", m)
+	}
+	if engineVersionLine.MatchString("carve-rs 1.2.4-rc1") {
+		t.Fatal("the version pattern accepts a prerelease carve-rs never publishes")
 	}
 }
