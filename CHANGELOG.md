@@ -40,6 +40,12 @@ line of Go changing, so rebuilds get an entry of their own.
   rather than reading it as ordinary paragraph text, and the trap reached a
   caller as `wasm error: unreachable` with no way to tell an invalid document
   from a dead engine (markup-carve/carve-rs#2341, #83).
+- `Options.Extensions` now selects extensions by registry key, one
+  `--extension KEY` per element, instead of sending the whole bundle for any
+  non-empty slice. A caller listing `math-block` no longer also gets spoiler,
+  details and the other 29; an empty slice selects none, `Static` with no
+  selection still sends the bundle, and an unknown key is an error naming the
+  keys the registry holds (#78).
 
 ## [0.1.4] - 2026-10-02
 

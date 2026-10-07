@@ -64,8 +64,8 @@ func ToHTMLOptionsContext(ctx context.Context, source string, opts Options) (str
 
 // Options configures a render call. The zero value is the interactive default.
 type Options struct {
-	Static     bool              // self-contained static HTML (CLI --static; implies --extensions)
-	Extensions []string          // enable bundled interactive extensions (CLI --extensions)
+	Static     bool              // self-contained static HTML (CLI --static)
+	Extensions []string          // extensions to enable, by registry key (CLI --extension KEY each)
 	Safe       bool              // escape =html raw blocks/spans (CLI --safe)
 	Profile    string            // full|article|comment|minimal (CLI --profile)
 	Symbols    map[string]string // render :name: shortcodes (CLI --symbol NAME=VALUE)
@@ -123,6 +123,12 @@ type Stamp struct {
 	GeneratedBy string // the engine that wrote the marker, empty when unrecorded
 }
 ```
+
+`Extensions` selects extensions by registry key, one `--extension KEY` per
+element, so the engine enables exactly what the caller listed. An empty slice
+selects none, which is the engine's own default; an unknown key is a render
+error naming the keys the registry holds. `Static` with no selection sends the
+whole bundle, because the constructs it flattens are what the bundle produces.
 
 Two boundaries on the non-HTML targets, both measured rather than assumed:
 
@@ -317,8 +323,9 @@ Full recipe, defaults and threat model:
 
 `ToHTMLStatic` (or `ToHTMLOptions` with `Options{Static: true}`) produces
 self-contained HTML that is safe to publish without a JavaScript client. It
-maps to the engine CLI flags `--html --static --extensions` (`Static` implies
-`--extensions`, since that is what produces the constructs to flatten) and:
+maps to the engine CLI flags `--html --static --extensions` (`Static` with no
+`Extensions` selection implies `--extensions`, since that is what produces the
+constructs to flatten) and:
 
 - flattens interactive constructs - a collapsed `<details>` becomes
   `<details open>`, and spoilers are revealed
