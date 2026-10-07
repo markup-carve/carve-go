@@ -376,6 +376,26 @@ type MigrationResult struct {
 	Report MigrationReport `json:"report"`
 }
 
+// ImportMode selects the engine's HTML import mode. The zero value means
+// ImportSafe, so a caller who does not ask keeps the safe default.
+type ImportMode string
+
+const (
+	// ImportSafe is the default: untrusted HTML, no raw passthrough.
+	ImportSafe ImportMode = "safe"
+	// ImportSemantic keeps more structure for HTML the caller trusts.
+	ImportSemantic ImportMode = "semantic"
+)
+
+// ImportOptions carries the engine options for an import. The zero value
+// equals FromHTML.
+type ImportOptions struct {
+	// Mode is the engine's --mode. Empty selects ImportSafe. The name is
+	// passed through rather than checked against a list kept here, so an
+	// unaccepted mode surfaces as the engine's own usage error.
+	Mode ImportMode
+}
+
 // FromHTML imports HTML in safe mode and returns canonical Carve plus its loss report.
 func FromHTML(source string) (MigrationResult, error) {
 	return FromHTMLContext(context.Background(), source)
@@ -383,14 +403,28 @@ func FromHTML(source string) (MigrationResult, error) {
 
 // FromHTMLContext is FromHTML with caller-controlled cancellation.
 func FromHTMLContext(ctx context.Context, source string) (MigrationResult, error) {
+	return FromHTMLOptionsContext(ctx, source, ImportOptions{})
+}
+
+// FromHTMLOptions is FromHTML with explicit import options.
+func FromHTMLOptions(source string, opts ImportOptions) (MigrationResult, error) {
+	return FromHTMLOptionsContext(context.Background(), source, opts)
+}
+
+// FromHTMLOptionsContext is FromHTMLOptions with caller-controlled cancellation.
+func FromHTMLOptionsContext(ctx context.Context, source string, opts ImportOptions) (MigrationResult, error) {
 	eng, err := loadEngine()
 	if err != nil {
 		return MigrationResult{}, err
 	}
+	mode := opts.Mode
+	if mode == "" {
+		mode = ImportSafe
+	}
 	out, status, err := runEngine(
 		ctx,
 		eng,
-		[]string{"carve", "migrate", "--from", "html", "--mode", "safe", "--report", "-"},
+		[]string{"carve", "migrate", "--from", "html", "--mode", string(mode), "--report", "-"},
 		source,
 	)
 	if err != nil {

@@ -1,6 +1,9 @@
 package carve
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestHTMLAndMarkdownMigrationExposeReports(t *testing.T) {
 	html, err := FromHTML("<p>Hello <strong>world</strong></p>")
@@ -61,5 +64,41 @@ func TestHTMLDiagnosticClassification(t *testing.T) {
 		if fidelity != want[0] || confidence != want[1] {
 			t.Errorf("%s: got %s/%s, want %s/%s", code, fidelity, confidence, want[0], want[1])
 		}
+	}
+}
+
+// TestHTMLImportModeIsSelectable holds the Mode field to the engine's answer.
+// Before an import mode could be passed, the argument list said "safe" and the
+// field could only ever read back "safe", so nothing here could fail.
+func TestHTMLImportModeIsSelectable(t *testing.T) {
+	const src = `<p onclick="x()">hi</p>`
+
+	for _, tc := range []struct {
+		name string
+		opts ImportOptions
+		want string
+	}{
+		{"zero value stays safe", ImportOptions{}, "safe"},
+		{"explicit safe", ImportOptions{Mode: ImportSafe}, "safe"},
+		{"semantic", ImportOptions{Mode: ImportSemantic}, "semantic"},
+	} {
+		got, err := FromHTMLOptions(src, tc.opts)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if got.Report.Mode != tc.want {
+			t.Errorf("%s: Mode = %q, want %q", tc.name, got.Report.Mode, tc.want)
+		}
+	}
+
+	if got, err := FromHTML(src); err != nil || got.Report.Mode != "safe" {
+		t.Errorf("FromHTML must keep the safe default: %q, %v", got.Report.Mode, err)
+	}
+
+	// The accepted names are not duplicated here, so an unaccepted one comes
+	// back as the engine's own usage error rather than a list that can drift.
+	_, err := FromHTMLOptions(src, ImportOptions{Mode: "preserve"})
+	if err == nil || !strings.Contains(err.Error(), "unknown mode preserve") {
+		t.Errorf("an unaccepted mode must surface the engine's error, got %v", err)
 	}
 }
