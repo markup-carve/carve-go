@@ -456,7 +456,7 @@ func FromMarkdownContext(ctx context.Context, source string) (MigrationResult, e
 	out, status, err := runEngine(
 		ctx,
 		eng,
-		[]string{"carve", "migrate", "--from", "markdown"},
+		[]string{"carve", "migrate", "--from", "markdown", "--report", "-"},
 		source,
 	)
 	if err != nil {
@@ -465,20 +465,50 @@ func FromMarkdownContext(ctx context.Context, source string) (MigrationResult, e
 	if status != 0 {
 		return MigrationResult{}, fmt.Errorf("carve: Markdown import failed: %s", out.stderr)
 	}
-	return MigrationResult{
-		Value: out.stdout,
-		Report: MigrationReport{
-			SchemaVersion: 2,
-			SourceFormat:  "markdown",
-			Diagnostics: []MigrationDiagnostic{{
-				Code:       "fidelity-unverified",
-				Message:    "Fidelity was not reported by the embedded Markdown importer; dropped is a conservative worst-case release-gate classification",
-				Severity:   "warning",
-				Fidelity:   "dropped",
-				Confidence: "fallback",
-			}},
-		},
-	}, nil
+	report := MigrationReport{
+		SchemaVersion: 2,
+		SourceFormat:  "markdown",
+	}
+	if strings.TrimSpace(out.stderr) != "" {
+		var engineReport struct {
+			Mode        string                `json:"mode"`
+			Adapter     string                `json:"adapter"`
+			Diagnostics []MigrationDiagnostic `json:"diagnostics"`
+		}
+		if err := json.Unmarshal([]byte(out.stderr), &engineReport); err != nil {
+			return MigrationResult{}, fmt.Errorf("carve: invalid Markdown import report: %w", err)
+		}
+		report.Mode = engineReport.Mode
+		report.Adapter = engineReport.Adapter
+		report.Diagnostics = engineReport.Diagnostics
+	}
+	// The Markdown channel classifies its own rows, so they pass through as the
+	// engine wrote them; classifyHTMLDiagnostic is the fallback for a row that
+	// arrives without one, which is the HTML channel's normal case.
+	for i := range report.Diagnostics {
+		d := &report.Diagnostics[i]
+		if d.Fidelity == "" || d.Confidence == "" {
+			f, c := classifyHTMLDiagnostic(d.Code)
+			if d.Fidelity == "" {
+				d.Fidelity = f
+			}
+			if d.Confidence == "" {
+				d.Confidence = c
+			}
+		}
+	}
+	if len(report.Diagnostics) == 0 {
+		// Only when the engine genuinely said nothing. Reporting "no loss" from
+		// an absent report would be a claim this package cannot support.
+		report.Diagnostics = []MigrationDiagnostic{{
+			Code:       "fidelity-unverified",
+			Message:    "Fidelity was not reported by the embedded Markdown importer; dropped is a conservative worst-case release-gate classification",
+			Severity:   "warning",
+			Fidelity:   "dropped",
+			Confidence: "fallback",
+		}}
+	}
+	return MigrationResult{Value: out.stdout, Report: report}, nil
 }
 
 // Render renders Carve source to the given format with the given options.

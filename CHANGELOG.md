@@ -46,6 +46,14 @@ line of Go changing, so rebuilds get an entry of their own.
   details and the other 29; an empty slice selects none, `Static` with no
   selection still sends the bundle, and an unknown key is an error naming the
   keys the registry holds (#78).
+- `FromMarkdown` returns the engine's own import report instead of a fixed
+  placeholder claiming none was produced. It now passes `--report -` the way
+  `FromHTML` already did, so a caller sees the real diagnostics: importing
+  `1. [ ] ordered task` reports the dropped checkbox, and a plain-text document
+  reports `literal-text-verified`/preserved rather than a conservative
+  `dropped`. The synthesized `fidelity-unverified` row remains only for the
+  case where the engine genuinely returns no report. `MigrationResult` and
+  `MigrationReport` are unchanged (#79).
 
 ## [0.1.4] - 2026-10-02
 
