@@ -87,7 +87,16 @@ func ToCarveContext(ctx context.Context, source string) (string, error)
 
 // Import foreign markup into canonical Carve with a machine-readable report.
 func FromHTML(source string) (MigrationResult, error)
+func FromHTMLOptions(source string, opts ImportOptions) (MigrationResult, error)
 func FromMarkdown(source string) (MigrationResult, error)
+
+// ImportOptions.Mode selects the engine's HTML import mode. The zero value is
+// ImportSafe, which is the right default for untrusted input; ImportSemantic
+// is the other mode the engine accepts. The name is passed through rather than
+// checked against a list kept here, so an unaccepted mode comes back as the
+// engine's own usage error. At the embedded engine (carve-rs 0.1.8) the two
+// modes agree on every input measured, so what the selection buys today is a
+// MigrationReport.Mode that reports what actually ran.
 
 // Reports use schema version 2. Fidelity is preserved, normalized, degraded,
 // or dropped; confidence is exact, inferred, or fallback. Both importers return
@@ -143,10 +152,12 @@ Two boundaries on the non-HTML targets, both measured rather than assumed:
   than the glyph you mapped. A test pins the behavior so a future engine that
   changes it cannot do so silently.
 
-Not available here: **`lint`**. It exists in carve-rs as a library API
-(`carve::lint_carve`) and has no CLI surface, and carve-go reaches the engine
-only across the WASI stdio/argv boundary. It arrives once the engine grows a
-`carve lint` subcommand and the embedded artifact is rebuilt past it.
+Not available here: **`lint`**. The engine does have the subcommand - `carve
+lint` reads stdin, prints `file:line:col rule - message` for each finding and
+exits 1 when it found any, 0 when it found none and 2 on a bad option - so the
+boundary is not what is missing. This package exposes no binding for it yet, so
+every lint rule the embedded engine carries is unobservable from Go. Tracked in
+[#80](https://github.com/markup-carve/carve-go/issues/80).
 
 ### The parsed AST
 

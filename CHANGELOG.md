@@ -25,6 +25,12 @@ line of Go changing, so rebuilds get an entry of their own.
 
 ### Added
 
+- `FromHTMLOptions` and `FromHTMLOptionsContext` take an `ImportOptions` whose
+  `Mode` selects the engine's HTML import mode. The argument list hard-coded
+  `--mode safe`, so `ImportSemantic` was unreachable and `MigrationReport.Mode`
+  could only ever read back `safe`. The zero value stays safe, so existing
+  callers do not move, and an unaccepted mode surfaces the engine's own usage
+  error instead of a list duplicated here (#82).
 - `internal/wasm/ENGINE_VERSION` records the version the embedded artifact
   reports for itself, and `TestTheEmbeddedEngineReportsTheRecordedVersion`
   holds the bytes to it. The engine gained `carve --version` in carve-rs 0.1.8,
