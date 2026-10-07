@@ -31,9 +31,14 @@ func TestHTMLAndMarkdownMigrationExposeReports(t *testing.T) {
 	if len(markdown.Report.Diagnostics) != 1 || markdown.Report.Diagnostics[0].Code != "fidelity-unverified" || markdown.Report.Diagnostics[0].Fidelity != "dropped" || markdown.Report.Diagnostics[0].Confidence != "fallback" {
 		t.Fatalf("unexpected diagnostics: %#v", markdown.Report.Diagnostics)
 	}
+	// The engine verifies a plain-text document rather than giving up on it, so
+	// this is exactly the reading the hard-coded placeholder used to hide.
 	plain, err := FromMarkdown("plain text\r\n\r\n")
-	if err != nil || len(plain.Report.Diagnostics) != 1 || plain.Report.Diagnostics[0].Code != "fidelity-unverified" {
-		t.Fatalf("Markdown fidelity limitation should be explicit: %#v, %v", plain, err)
+	if err != nil || len(plain.Report.Diagnostics) != 1 ||
+		plain.Report.Diagnostics[0].Code != "literal-text-verified" ||
+		plain.Report.Diagnostics[0].Fidelity != "preserved" ||
+		plain.Report.Diagnostics[0].Confidence != "exact" {
+		t.Fatalf("Markdown report should be the engine's own: %#v, %v", plain, err)
 	}
 }
 
