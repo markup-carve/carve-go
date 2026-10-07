@@ -9,6 +9,8 @@ line of Go changing, so rebuilds get an entry of their own.
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-10-07
+
 ### Changed
 
 - The embedded engine moves from carve-rs 0.1.6 to 0.1.8, two releases and 396
@@ -29,6 +31,15 @@ line of Go changing, so rebuilds get an entry of their own.
   which is the first thing carried inside the binary that names which engine it
   is; `internal/wasm/REV` is text beside the artifact and the digest proves only
   that the bytes are intact.
+
+### Fixed
+
+- A line holding a single `|` followed by an attribute block, such as `|{.x}`,
+  renders as paragraph text. Every artifact up to v0.1.4 aborted the guest
+  module on those five bytes: the line reached the table check, which panicked
+  rather than reading it as ordinary paragraph text, and the trap reached a
+  caller as `wasm error: unreachable` with no way to tell an invalid document
+  from a dead engine (markup-carve/carve-rs#2341, #83).
 
 ## [0.1.4] - 2026-10-02
 
@@ -165,7 +176,8 @@ First release. `ToHTML` and the AST surface over a carve-rs engine embedded as
 WebAssembly and driven with wazero, so the module has no cgo and no external
 process.
 
-[Unreleased]: https://github.com/markup-carve/carve-go/compare/v0.1.4...HEAD
+[Unreleased]: https://github.com/markup-carve/carve-go/compare/v0.1.5...HEAD
+[0.1.5]: https://github.com/markup-carve/carve-go/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/markup-carve/carve-go/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/markup-carve/carve-go/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/markup-carve/carve-go/compare/v0.1.1...v0.1.2
