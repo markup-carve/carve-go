@@ -128,29 +128,33 @@ echo "${REV}" > "${HERE}/internal/wasm/REV"
 # internal/wasm/ rather than only from wherever this script happened to run.
 ( cd "${HERE}/internal/wasm" && sha256sum carve.wasm > carve.wasm.sha256 )
 
-# And record what the artifact says it is, asked OF THE ARTIFACT rather than of
-# the checkout that produced it.
+# And record WHICH ENGINE the bytes are, which is the one leg the digest cannot
+# reach. The digest proves the bytes are the bytes and says nothing about what
+# engine produced them, so an artifact rebuilt from a different carve-rs with
+# its digest regenerated passes every check above.
 #
-# This is the one leg the digest cannot reach. The digest proves the bytes are
-# the bytes; it says nothing about which engine they are, so a REV edited on its
-# own still passes every check above. `carve --version` is a fact carried INSIDE
-# the binary, so comparing it against a committed string catches an artifact
-# swapped for a different engine version and a REV moved across a version
-# boundary - neither of which the digest or the ancestry check can see.
+# The engine gained `carve --version` in carve-rs 0.1.8 (carve-rs#2270, #2271),
+# reporting `carve-rs X.Y.Z` from inside the binary. That is what makes the
+# pairing checkable: the committed artifact can be ASKED what it is, and
+# TestTheEmbeddedEngineReportsTheRecordedVersion compares its answer against
+# the file written here.
+#
+# The version is read from the checkout's Cargo.toml rather than by running the
+# artifact, because the artifact is a wasm module the shell cannot execute and
+# this script must not require a wasm runtime to finish. The checkout is clean
+# and its HEAD is REV, both asserted above, so its Cargo.toml and the bytes
+# describe the same source. The TEST is what closes the loop by asking the
+# binary; this side only records the claim.
 #
 # What it still does not buy: two commits of the SAME version are
-# indistinguishable this way. That is a narrower hole than the one it closes.
-#
-# The engine gained `--version` in carve-rs 0.1.8 (carve-rs#2270, #2271). An
-# older artifact exits non-zero here, which is why the failure names the
-# version rather than assuming the flag exists.
-ENGINE_VERSION="$(printf '' | "${CARVE_RS}/target/wasm32-wasip1/release/carve" --version 2>/dev/null || true)"
+# indistinguishable this way, and a REV hand-edited on its own still passes
+# because nothing was rebuilt. It is narrower than the hole it closes.
+ENGINE_VERSION="$(grep -m1 '^version = ' "${CARVE_RS}/Cargo.toml" | sed 's/.*"\(.*\)".*/\1/')"
 if [ -z "${ENGINE_VERSION}" ]; then
-  # The wasm cannot be executed directly by the shell, so read the version out
-  # of the source tree the build came from instead. Same checkout, same commit.
-  ENGINE_VERSION="carve-rs $(grep -m1 '^version = ' "${CARVE_RS}/Cargo.toml" | sed 's/.*"\(.*\)".*/\1/')"
+  echo "error: no version in ${CARVE_RS}/Cargo.toml; cannot record which engine these bytes are" >&2
+  exit 1
 fi
-echo "${ENGINE_VERSION#carve-rs }" > "${HERE}/internal/wasm/ENGINE_VERSION"
+echo "${ENGINE_VERSION}" > "${HERE}/internal/wasm/ENGINE_VERSION"
 
 echo "wrote ${OUT} from carve-rs ${REV}"
 cat "${HERE}/internal/wasm/carve.wasm.sha256"
