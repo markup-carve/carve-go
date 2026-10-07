@@ -198,7 +198,7 @@ const detailsSrc = "::: details \"More info\"\nHidden body.\n:::\n"
 // static mode so the body is visible without a client.
 func TestToHTMLStatic_DetailsOpen(t *testing.T) {
 	// Interactive (with extensions so the <details> element is produced).
-	interactive, err := ToHTMLOptions(detailsSrc, Options{Extensions: []string{"all"}})
+	interactive, err := ToHTMLOptions(detailsSrc, Options{Extensions: []string{"details"}})
 	if err != nil {
 		t.Fatalf("interactive error: %v", err)
 	}
@@ -231,7 +231,7 @@ func TestToHTMLStatic_DetailsOpen(t *testing.T) {
 func TestToHTMLStatic_SpoilerRevealed(t *testing.T) {
 	src := "Plot: :spoiler[the butler did it].\n"
 
-	interactive, err := ToHTMLOptions(src, Options{Extensions: []string{"all"}})
+	interactive, err := ToHTMLOptions(src, Options{Extensions: []string{"spoiler"}})
 	if err != nil {
 		t.Fatalf("interactive error: %v", err)
 	}
@@ -273,7 +273,7 @@ func TestToHTMLStatic_MermaidSource(t *testing.T) {
 // TestToHTMLStatic_DiffersFromInteractive sanity-checks that the two entry
 // points actually diverge on the same input.
 func TestToHTMLStatic_DiffersFromInteractive(t *testing.T) {
-	interactive, err := ToHTMLOptions(detailsSrc, Options{Extensions: []string{"all"}})
+	interactive, err := ToHTMLOptions(detailsSrc, Options{Extensions: []string{"details"}})
 	if err != nil {
 		t.Fatalf("interactive error: %v", err)
 	}
@@ -410,7 +410,7 @@ func binSupportsStatic(t *testing.T, bin string) bool {
 // becomes an ordered list, when the bundled extensions are enabled.
 func TestToHTML_CodeCallouts(t *testing.T) {
 	src := "``` go\nfmt.Println(\"hello\") // <1>\n```\n\n<1> prints a greeting\n"
-	out, err := ToHTMLOptions(src, Options{Extensions: []string{"all"}})
+	out, err := ToHTMLOptions(src, Options{Extensions: []string{"code-callouts"}})
 	if err != nil {
 		t.Fatalf("ToHTMLOptions error: %v", err)
 	}
@@ -456,7 +456,7 @@ func TestToHTML_CodeCallouts_NoExtensions(t *testing.T) {
 func TestToHTML_Citation_NotResolved(t *testing.T) {
 	// A citation reference followed by an in-document definition.
 	src := "See [@smith2020].\n\n[@smith2020]: Smith, J. (2020). Title.\n"
-	out, err := ToHTMLOptions(src, Options{Extensions: []string{"all"}})
+	out, err := ToHTMLOptions(src, Options{Extensions: []string{"citations"}})
 	if err != nil {
 		t.Fatalf("ToHTMLOptions error: %v", err)
 	}
@@ -520,7 +520,7 @@ func TestToHTML_DiagramPresets(t *testing.T) {
 		{"``` d2\nx -> y\n```\n", `<pre class="d2" role="img" aria-label="d2">x -> y</pre>`},
 	}
 	for _, c := range cases {
-		out, err := ToHTMLOptions(c.src, Options{Extensions: []string{"all"}})
+		out, err := ToHTMLOptions(c.src, Options{Extensions: []string{"fenced-render-plantuml", "fenced-render-graphviz", "fenced-render-d2"}})
 		if err != nil {
 			t.Fatalf("ToHTMLOptions(%q) error: %v", c.src, err)
 		}

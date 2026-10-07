@@ -42,7 +42,7 @@ extensions, static output, safe mode, profiles, and symbols.
 html, err := carve.ToHTMLOptions(source, carve.Options{
 	Safe:       true,
 	Profile:    "comment",
-	Extensions: []string{"all"},
+	Extensions: []string{"spoiler", "details"},
 })
 ```
 

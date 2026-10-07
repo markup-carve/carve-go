@@ -109,9 +109,10 @@ type Options struct {
 	// fences degrade to their source as a <pre><code> block. It maps to the
 	// engine CLI flag --static.
 	//
-	// Static implies the bundled extensions (--extensions), since those are
-	// what produce the constructs static mode flattens; you do not also need
-	// to populate Extensions for the static behavior to apply.
+	// Static with no Extensions selection implies the bundled extensions
+	// (--extensions), since those are what produce the constructs static mode
+	// flattens; you do not also need to populate Extensions for the static
+	// behavior to apply. A non-empty Extensions is honored as written.
 	//
 	// Build-time renderer injection (turning mermaid/math into an image or
 	// SSR markup) is NOT available in carve-go: that path needs host closures
@@ -119,16 +120,19 @@ type Options struct {
 	// Static mode in carve-go is therefore flatten + source fallback only.
 	Static bool
 
-	// Extensions, when non-empty, enables the bundled interactive extensions
-	// in the engine (it maps to the CLI flag --extensions). The carve-rs
-	// engine exposes a single on/off switch rather than a per-extension list,
-	// so ANY non-empty slice enables the full bundle (details, spoiler,
-	// mermaid, chart, math). Enabling them is required for Static to have the
-	// interactive constructs to flatten or degrade.
+	// Extensions selects extensions by registry key. Each element maps to one
+	// repeatable engine CLI flag --extension KEY, so exactly what the caller
+	// lists is what the engine enables.
 	//
-	// It is modeled as a slice so the API can grow into per-extension
-	// selection if the engine gains it, without a breaking change. The
-	// element strings are advisory today.
+	// An empty slice selects no extensions, which is the engine's own default
+	// and not a request for all of them. To enable the whole bundle, set
+	// Static (which sends --extensions because that is what it flattens) or
+	// list the keys you want.
+	//
+	// Keys are validated by the engine, so an unknown one surfaces as a render
+	// error naming the rejected key and the keys the registry holds. The
+	// registry grows with the engine; this package does not carry a copy of it
+	// that could fall behind.
 	Extensions []string
 
 	// Safe escapes =html raw blocks and spans instead of emitting them. It
@@ -530,11 +534,19 @@ func renderArgs(format OutputFormat, opts Options) ([]string, error) {
 	if opts.Static {
 		args = append(args, "--static")
 	}
-	// Static mode exists to flatten/degrade the interactive constructs, which
-	// only the bundled extensions produce, so Static implies --extensions even
-	// when the caller did not list any. (The engine exposes a single on/off
-	// switch, not a per-extension selector.)
-	if opts.Static || len(opts.Extensions) > 0 {
+	// An explicit selection wins: each key goes over as its own --extension,
+	// so the caller gets what they asked for and nothing else. Static with no
+	// selection falls back to the whole bundle, since the constructs it exists
+	// to flatten are what the bundle produces.
+	switch {
+	case len(opts.Extensions) > 0:
+		for _, ext := range opts.Extensions {
+			if ext == "" {
+				return nil, fmt.Errorf("carve: Options.Extensions contains an empty extension key")
+			}
+			args = append(args, "--extension", ext)
+		}
+	case opts.Static:
 		args = append(args, "--extensions")
 	}
 	if opts.Safe {
