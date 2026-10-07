@@ -8,8 +8,13 @@ import (
 	"strings"
 )
 
-// LossPosition is a render loss's span in the source. All four line and column
-// numbers are 1-based; offsets are 0-based byte offsets.
+// LossPosition is a render loss's span in the source.
+//
+// Lines are 1-based. Columns are 1-based and offsets 0-based, and BOTH COUNT
+// UNICODE CODEPOINTS, not bytes - the same unit ParseAST reports. Slicing a Go
+// string by these numbers is wrong for any source holding non-ASCII text ahead
+// of the loss, and can cut a UTF-8 sequence in half; convert with []rune(source)
+// first.
 type LossPosition struct {
 	StartLine   int `json:"startLine"`
 	EndLine     int `json:"endLine"`

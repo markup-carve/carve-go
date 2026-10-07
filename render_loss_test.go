@@ -260,3 +260,32 @@ func TestParseRenderReportNormalizesANullLossList(t *testing.T) {
 		t.Errorf("the last brace-leading line is the report: %#v, %v", got, err)
 	}
 }
+
+// Positions count CODEPOINTS, not bytes. Held because the doc comment first
+// said bytes, which would have shipped a public contract that silently cuts a
+// UTF-8 sequence in half for any source with non-ASCII text ahead of the loss.
+func TestLossPositionsCountCodepointsNotBytes(t *testing.T) {
+	// One 2-byte rune and one 4-byte rune in the same column, so a byte
+	// reading would differ between them and a codepoint reading cannot.
+	for _, lead := range []string{"é", "\U0001F600"} {
+		source := lead + " [a](javascript:x)\n"
+		_, report, err := RenderChecked(source, OutputHTML, CheckedOptions{})
+		if err != nil || len(report.Losses) != 1 {
+			t.Fatalf("%q: %#v, %v", lead, report, err)
+		}
+		pos := report.Losses[0].Pos
+		if pos.StartOffset != 2 || pos.StartColumn != 3 || pos.EndOffset != 19 {
+			t.Errorf("%q: positions must not move with the byte length: %#v", lead, pos)
+		}
+		// The byte index of the link differs from the reported offset, which
+		// is the whole reason the unit has to be stated.
+		if strings.Index(source, "[a]") == pos.StartOffset && lead != "" {
+			t.Errorf("%q: byte index and codepoint offset agree, so this case proves nothing", lead)
+		}
+		// Converting first is what a caller must do.
+		if string([]rune(source)[pos.StartOffset:pos.StartOffset+3]) != "[a]" {
+			t.Errorf("%q: the offset must index runes: %q", lead,
+				string([]rune(source)[pos.StartOffset:]))
+		}
+	}
+}

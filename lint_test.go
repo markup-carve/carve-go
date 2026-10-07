@@ -101,3 +101,16 @@ func TestLintRefusesAnUnreadableFindingsLine(t *testing.T) {
 		t.Errorf("got %#v, want %#v", got, want)
 	}
 }
+
+// A lint finding's column counts codepoints, like every other engine position.
+func TestLintColumnsCountCodepointsNotBytes(t *testing.T) {
+	for _, lead := range []string{"é", "\U0001F600"} {
+		findings, err := Lint("# T\n\n" + lead + " [a](#no).\n")
+		if err != nil || len(findings) != 1 {
+			t.Fatalf("%q: %#v, %v", lead, findings, err)
+		}
+		if findings[0].Line != 3 || findings[0].Column != 3 {
+			t.Errorf("%q: the column must not move with the byte length: %#v", lead, findings[0])
+		}
+	}
+}

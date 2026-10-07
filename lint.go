@@ -14,7 +14,9 @@ type LintFinding struct {
 	// Path is the engine's name for the input. Source given to Lint is read
 	// from stdin, so it is "<stdin>".
 	Path string
-	// Line and Column are 1-based.
+	// Line and Column are 1-based, and Column COUNTS UNICODE CODEPOINTS
+	// rather than bytes, the same unit the engine's positions use
+	// everywhere. Index a Go string by it only after []rune conversion.
 	Line   int
 	Column int
 	// Rule is the engine's rule id, such as broken-fragment-link.

@@ -245,6 +245,13 @@ has not modeled yet is still reachable. A test walks every key the engine emits
 and fails if the typed struct has no field for it, which is the check the
 carve-wasm binding lacked.
 
+**Positions count codepoints, not bytes.** `LossPosition` columns and offsets,
+and `LintFinding.Column`, are in the same unit the rest of the engine's
+positions use. Indexing a Go string with them is wrong for any source holding
+non-ASCII text ahead of the position and can cut a UTF-8 sequence in half;
+convert with `[]rune(source)` first. Measured with a 2-byte and a 4-byte leading
+rune, which report the same column and offset.
+
 Note that the hardening itself is always on: a denied destination renders as
 `href=""` whether or not you ask for a report. What the checked render adds is
 being told.
