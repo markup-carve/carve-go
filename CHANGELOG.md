@@ -9,6 +9,27 @@ line of Go changing, so rebuilds get an entry of their own.
 
 ## [Unreleased]
 
+### Changed
+
+- The embedded engine moves from carve-rs 0.1.6 to 0.1.8, two releases and 396
+  commits of engine work. Rendering changes: measured against the spec commit
+  0.1.8 pins, the previous artifact rendered 204 of 2225 mandatory corpus
+  documents differently from the spec and the rebuilt one renders 0. Most of the
+  movement is container and column reading (fence and colon closers measured
+  from their authored base, comments and definitions folding under a term,
+  flush-left lines below a nested item), plus exact-case name lookup for
+  cross-references, glossary terms and include selectors, and table row-group
+  metadata.
+
+### Added
+
+- `internal/wasm/ENGINE_VERSION` records the version the embedded artifact
+  reports for itself, and `TestTheEmbeddedEngineReportsTheRecordedVersion`
+  holds the bytes to it. The engine gained `carve --version` in carve-rs 0.1.8,
+  which is the first thing carried inside the binary that names which engine it
+  is; `internal/wasm/REV` is text beside the artifact and the digest proves only
+  that the bytes are intact.
+
 ## [0.1.4] - 2026-10-02
 
 ### Fixed
