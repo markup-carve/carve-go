@@ -1,4 +1,4 @@
-name: Tag gate
+name: Release packages and assets
 
 # Nothing in this repository used to fire on a tag: ci.yml runs on pushes and
 # pull requests only, so a tag could be cut from any commit on any branch and
@@ -17,22 +17,36 @@ name: Tag gate
 # the tag and the proxy.
 
 on:
-  push:
-    tags: ['*']
-  # Rehearsal. The answer has to be readable before the ref exists, because on
-  # an immutable publish a dry run is the only safe order.
-  workflow_dispatch:
+  workflow_call:
     inputs:
-      tag:
-        description: The tag name to check this ref against (e.g. v0.1.4)
+      publish:
         required: true
-
+        type: boolean
+      tag:
+        required: true
+        type: string
+      version:
+        required: true
+        type: string
+      release_tag:
+        required: true
+        type: string
+      source_sha:
+        required: true
+        type: string
+      release_id:
+        required: true
+        type: string
+      release_body:
+        required: true
+        type: string
+      notes_digest:
+        required: true
+        type: string
 permissions:
-  contents: read
-
-# Every job declares timeout-minutes. Without one GitHub applies a 360-minute
-# default, roughly 900x the median job in this org, so a hung step burns hours
-# of runner time before anything stops it.
+  contents: write
+  actions: read
+  id-token: write
 jobs:
   gate:
     name: version, ancestry and suite
@@ -58,11 +72,19 @@ jobs:
       # can refuse it. The character class is deliberately wider than vX.Y.Z -
       # version-gate.sh makes that judgement and says why - and narrow enough
       # that nothing here reaches a shell or splits a line of $GITHUB_OUTPUT.
+          ref: ${{ inputs.source_sha }}
+      - name: Expose the candidate tag locally
+        if: ${{ !inputs.publish }}
+        shell: bash
+        env:
+          CANDIDATE_TAG: ${{ inputs.tag }}
+        run: |
+          git tag "$CANDIDATE_TAG" "${{ inputs.source_sha }}"
       - name: Resolve the tag under test
         id: tag
         env:
-          REF_TYPE: ${{ github.ref_type }}
-          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ 'tag' }}
+          REF_NAME: ${{ inputs.tag }}
           INPUT_TAG: ${{ inputs.tag }}
         run: |
           if [ "$REF_TYPE" = tag ]; then
@@ -199,3 +221,8 @@ jobs:
             echo "corpus: $identical"
           fi
           exit "$bad"
+env:
+  LANE_TAG: ${{ inputs.tag }}
+  LANE_REF: ${{ format('refs/tags/{0}', inputs.tag) }}
+  LANE_REF_TYPE: tag
+  LANE_PUBLISH: ${{ inputs.publish }}
