@@ -2,6 +2,7 @@ package carve
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -62,10 +63,8 @@ var compareMarkerRun = regexp.MustCompile(`^:{3,}`)
 // pages tests/corpus is generated from. corpusDir is CARVE_SPEC_CORPUS, i.e.
 // <spec>/tests/corpus.
 //
-// The scan mirrors the generator's state machine rather than grepping: a
-// `::: compare` line inside an already-open compare block is content, not a
-// second pair, and the generator closes a block on a bare marker line. Mirroring
-// keeps the two counts equal by construction instead of by luck.
+// Count Carve and HTML fences independently of generated files. Each block
+// must contain equal, nonzero counts; literal fenced content is ignored.
 func declaredCorpusSize(t *testing.T, corpusDir string) int {
 	t.Helper()
 	examplesDir := filepath.Join(corpusDir, "..", "..", "resources", "examples")
@@ -81,22 +80,46 @@ func declaredCorpusSize(t *testing.T, corpusDir string) int {
 			t.Fatalf("no corpus source page at %s: %v. tests/corpus is generated from these pages; "+
 				"if the spec moved them, this helper has to move with them", path, err)
 		}
-		inCompare := false
-		marker := ""
+		marker, fence := "", ""
+		carveCount, htmlCount := 0, 0
 		for _, line := range strings.Split(string(blob), "\n") {
+			if fence != "" {
+				if strings.HasPrefix(line, fence) && strings.TrimSpace(line[len(fence):]) == "" {
+					fence = ""
+				}
+				continue
+			}
+			ticks := len(line) - len(strings.TrimLeft(line, "`"))
+			if ticks >= 3 {
+				fence = line[:ticks]
+				if marker != "" {
+					switch strings.TrimSpace(line[ticks:]) {
+					case "carve":
+						carveCount++
+					case "html":
+						htmlCount++
+					}
+				}
+				continue
+			}
 			trimmed := strings.TrimSpace(line)
-			if inCompare {
+			if marker != "" {
 				if trimmed == marker {
-					inCompare = false
+					if carveCount == 0 || carveCount != htmlCount {
+						t.Fatalf("unpaired or empty compare block in %s: carve=%d html=%d", path, carveCount, htmlCount)
+					}
+					declared += carveCount
 					marker = ""
 				}
 				continue
 			}
 			if compareOpenLine.MatchString(trimmed) {
-				declared++
-				inCompare = true
 				marker = compareMarkerRun.FindString(trimmed)
+				carveCount, htmlCount = 0, 0
 			}
+		}
+		if marker != "" || fence != "" {
+			t.Fatalf("unclosed compare block or fence in %s", path)
 		}
 	}
 	if declared == 0 {
@@ -119,10 +142,83 @@ func requireWholeCorpus(t *testing.T, corpusDir string, got int, what string) {
 	declared := declaredCorpusSize(t, corpusDir)
 	if got != declared {
 		t.Fatalf("%s: %d, but the spec's example pages declare %d. Every ::: compare block in "+
-			"resources/examples/{core,extensions,edge-cases}.md becomes one corpus pair, so a difference "+
+			"resources/examples/{core,extensions,edge-cases}.md declares its fence pairs, so a difference "+
 			"means the corpus at %s is not the one those pages describe - a truncated or stale "+
 			"checkout, a wrong CARVE_SPEC_CORPUS, or a corpus that needs regenerating "+
 			"(npm run corpus:build in the spec repository). It does not mean this run was clean.",
 			what, got, declared, corpusDir)
+	}
+}
+
+func TestDeclaredCorpusCountsPairsAndIgnoresFencedMarkup(t *testing.T) {
+	root := t.TempDir()
+	examples := filepath.Join(root, "resources", "examples")
+	if err := os.MkdirAll(examples, 0755); err != nil {
+		t.Fatal(err)
+	}
+	source := "````text\n::: compare\n```carve\nfake\n```\n```html\nfake\n```\n:::\n````\n::: compare no-render\n````carve\n::: compare\n```html\nliteral\n```\n:::\n````\n```html\n<p>first</p>\n```\n```carve\nsecond\n```\n```html\n<p>second</p>\n```\n:::\n"
+	for i, page := range specExamplePages {
+		content := ""
+		if i == 0 {
+			content = source
+		}
+		if err := os.WriteFile(filepath.Join(examples, page), []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	corpus := filepath.Join(root, "tests", "corpus")
+	if got := declaredCorpusSize(t, corpus); got != 2 {
+		t.Fatalf("got %d pairs, want 2", got)
+	}
+	requireWholeCorpus(t, corpus, 2, "complete")
+}
+
+func TestCorpusPopulationRefusals(t *testing.T) {
+	if mode := os.Getenv("CARVE_POPULATION_TEST_MODE"); mode != "" {
+		root := t.TempDir()
+		examples := filepath.Join(root, "resources", "examples")
+		if err := os.MkdirAll(examples, 0755); err != nil {
+			t.Fatal(err)
+		}
+		source := "::: compare\n```carve\nx\n```\n```html\nx\n```\n:::\n"
+		switch mode {
+		case "unpaired":
+			source = "::: compare\n```carve\nx\n```\n:::\n"
+		case "empty":
+			source = "::: compare\n:::\n"
+		case "unclosed":
+			source = "::: compare\n"
+		}
+		for i, page := range specExamplePages {
+			content := ""
+			if i == 0 {
+				content = source
+			}
+			if err := os.WriteFile(filepath.Join(examples, page), []byte(content), 0644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		corpus := filepath.Join(root, "tests", "corpus")
+		if mode == "truncated" {
+			requireWholeCorpus(t, corpus, 0, "truncated")
+		} else {
+			declaredCorpusSize(t, corpus)
+		}
+		return
+	}
+	for _, test := range []struct{ mode, message string }{
+		{"truncated", "spec's example pages declare 1"},
+		{"unpaired", "unpaired or empty compare block"},
+		{"empty", "unpaired or empty compare block"},
+		{"unclosed", "unclosed compare block or fence"},
+	} {
+		t.Run(test.mode, func(t *testing.T) {
+			cmd := exec.Command(os.Args[0], "-test.run=^TestCorpusPopulationRefusals$")
+			cmd.Env = append(os.Environ(), "CARVE_POPULATION_TEST_MODE="+test.mode)
+			output, err := cmd.CombinedOutput()
+			if err == nil || !strings.Contains(string(output), test.message) {
+				t.Fatalf("expected %s refusal, got err=%v output=%s", test.mode, err, output)
+			}
+		})
 	}
 }
