@@ -9,6 +9,11 @@ line of Go changing, so rebuilds get an entry of their own.
 
 ## [Unreleased]
 
+- **Breaking:** Engine compatibility: image alt text and quoted include paths decode ASCII punctuation escapes; escape a literal backslash twice. Include rename warnings use `include-id-rename` instead of `include-heading-id-rename`.
+
+- Rebuild the embedded engine from Rust `ed5581b1` to include Markdown construct assessment and the image-alt boundary fix.
+- Preserve an empty Markdown diagnostic list when the engine supplied a report; use the fallback warning only when the report is absent.
+
 ## [0.1.5] - 2026-10-07
 
 ### Changed

@@ -31,9 +31,15 @@ func TestHTMLAndMarkdownMigrationExposeReports(t *testing.T) {
 	if markdown.Value != "/em/ and *strong*\n" || markdown.Report.SourceFormat != "markdown" {
 		t.Fatalf("unexpected Markdown migration: %#v", markdown)
 	}
-	if len(markdown.Report.Diagnostics) != 1 || markdown.Report.Diagnostics[0].Code != "fidelity-unverified" || markdown.Report.Diagnostics[0].Fidelity != "dropped" || markdown.Report.Diagnostics[0].Confidence != "fallback" {
-		t.Fatalf("unexpected diagnostics: %#v", markdown.Report.Diagnostics)
+	if len(markdown.Report.Diagnostics) == 0 {
+		t.Fatal("missing Markdown evidence")
 	}
+	for _, d := range markdown.Report.Diagnostics {
+		if d.Code == "fidelity-unverified" || d.Fidelity != "preserved" || d.Confidence != "exact" {
+			t.Fatalf("unexpected diagnostics: %#v", markdown.Report.Diagnostics)
+		}
+	}
+
 	// The engine verifies a plain-text document rather than giving up on it, so
 	// this is exactly the reading the hard-coded placeholder used to hide.
 	plain, err := FromMarkdown("plain text\r\n\r\n")

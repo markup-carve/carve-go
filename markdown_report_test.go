@@ -53,20 +53,50 @@ func TestFromMarkdownKeepsTheReportEnvelope(t *testing.T) {
 	}
 }
 
-// A clean document still gets the engine's own fidelity-unverified row, and
-// exactly one copy of it: this package used to synthesize its own.
-func TestFromMarkdownDoesNotDuplicateFidelityUnverified(t *testing.T) {
+func TestFromMarkdownUsesConstructEvidence(t *testing.T) {
 	res, err := FromMarkdown("# hi\n")
 	if err != nil {
-		t.Fatalf("FromMarkdown: %v", err)
+		t.Fatal(err)
 	}
-	n := 0
+	if len(res.Report.Diagnostics) == 0 {
+		t.Fatal("missing construct evidence")
+	}
 	for _, d := range res.Report.Diagnostics {
-		if d.Code == "fidelity-unverified" {
-			n++
+		if d.Code == "fidelity-unverified" || d.Fidelity != "preserved" || d.Confidence != "exact" {
+			t.Fatalf("unexpected heading assessment: %+v", d)
 		}
 	}
-	if n != 1 {
-		t.Errorf("fidelity-unverified appears %d times, want 1: %+v", n, res.Report.Diagnostics)
+}
+
+func TestEmptyMarkdownReportIsPreserved(t *testing.T) {
+	report, err := decodeMarkdownReport(`{"schemaVersion":2,"sourceFormat":"markdown","diagnostics":[]}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Diagnostics == nil || len(report.Diagnostics) != 0 {
+		t.Fatalf("an empty engine report gained diagnostics: %+v", report)
+	}
+}
+
+func TestAbsentMarkdownReportIsUnverified(t *testing.T) {
+	report, err := decodeMarkdownReport("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Diagnostics) != 1 || report.Diagnostics[0].Code != "fidelity-unverified" {
+		t.Fatalf("missing report was treated as verified: %+v", report)
+	}
+}
+
+func TestInvalidMarkdownReportIsRefused(t *testing.T) {
+	for _, source := range []string{
+		"not JSON", `{}`, `null`,
+		`{"schemaVersion":2,"sourceFormat":"html","diagnostics":[]}`,
+		`{"schemaVersion":3,"sourceFormat":"markdown","diagnostics":[]}`,
+		`{"schemaVersion":2,"sourceFormat":"markdown","diagnostics":null}`,
+	} {
+		if _, err := decodeMarkdownReport(source); err == nil {
+			t.Errorf("accepted invalid report %s", source)
+		}
 	}
 }

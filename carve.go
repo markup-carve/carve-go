@@ -499,23 +499,28 @@ func FromMarkdownContext(ctx context.Context, source string) (MigrationResult, e
 	if status != 0 {
 		return MigrationResult{}, fmt.Errorf("carve: Markdown import failed: %s", out.stderr)
 	}
+	report, err := decodeMarkdownReport(out.stderr)
+	if err != nil {
+		return MigrationResult{}, err
+	}
+	return MigrationResult{Value: out.stdout, Report: report}, nil
+}
+
+func decodeMarkdownReport(stderr string) (MigrationReport, error) {
 	report := MigrationReport{
 		SchemaVersion: 2,
 		SourceFormat:  "markdown",
 	}
-	if strings.TrimSpace(out.stderr) != "" {
-		var engineReport struct {
-			Mode        string                `json:"mode"`
-			Adapter     string                `json:"adapter"`
-			Diagnostics []MigrationDiagnostic `json:"diagnostics"`
+	if strings.TrimSpace(stderr) != "" {
+		report = MigrationReport{}
+		if err := json.Unmarshal([]byte(stderr), &report); err != nil {
+			return MigrationReport{}, fmt.Errorf("carve: invalid Markdown import report: %w", err)
 		}
-		if err := json.Unmarshal([]byte(out.stderr), &engineReport); err != nil {
-			return MigrationResult{}, fmt.Errorf("carve: invalid Markdown import report: %w", err)
+		if report.SchemaVersion != 2 || report.SourceFormat != "markdown" || report.Diagnostics == nil {
+			return MigrationReport{}, fmt.Errorf("carve: invalid Markdown import report envelope")
 		}
-		report.Mode = engineReport.Mode
-		report.Adapter = engineReport.Adapter
-		report.Diagnostics = engineReport.Diagnostics
 	}
+
 	// The Markdown channel classifies its own rows, so they pass through as the
 	// engine wrote them; classifyHTMLDiagnostic is the fallback for a row that
 	// arrives without one, which is the HTML channel's normal case.
@@ -531,9 +536,8 @@ func FromMarkdownContext(ctx context.Context, source string) (MigrationResult, e
 			}
 		}
 	}
-	if len(report.Diagnostics) == 0 {
-		// Only when the engine genuinely said nothing. Reporting "no loss" from
-		// an absent report would be a claim this package cannot support.
+	if strings.TrimSpace(stderr) == "" {
+		// An absent report cannot establish fidelity.
 		report.Diagnostics = []MigrationDiagnostic{{
 			Code:       "fidelity-unverified",
 			Message:    "Fidelity was not reported by the embedded Markdown importer; dropped is a conservative worst-case release-gate classification",
@@ -542,7 +546,7 @@ func FromMarkdownContext(ctx context.Context, source string) (MigrationResult, e
 			Confidence: "fallback",
 		}}
 	}
-	return MigrationResult{Value: out.stdout, Report: report}, nil
+	return report, nil
 }
 
 // Render renders Carve source to the given format with the given options.
