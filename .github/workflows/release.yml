@@ -1,0 +1,304 @@
+name: Release
+
+# THE TAG IS CREATED HERE, AFTER THE GATES PASS AND AFTER A HUMAN APPROVES.
+#
+# For a Go module the tag IS the publish. `go get` and `go install` resolve
+# straight from the tag name, and proxy.golang.org caches that version
+# immutably as soon as anything fetches it: no yank, no re-upload, no
+# deprecation takes the bytes back. A released version can only be superseded.
+#
+# tag.yml already runs the right checks, but it runs them on a tag PUSH, which
+# is after the only irreversible act in the release. This workflow inverts the
+# ordering: the gates run against `main`, the approval sits between them and the
+# tag, and the tag is created last.
+#
+# The gates are spelled out here rather than delegated to tag.yml because a ref
+# created with `github.token` does not trigger other workflows. The tag this
+# workflow pushes will NOT start tag.yml, so a gate that lives only there would
+# not run at all on a release cut this way.
+#
+# Every job declares timeout-minutes, so a hung step fails in minutes instead of
+# inheriting GitHub's 360-minute default.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, without a leading v (e.g. 0.1.6)'
+        required: true
+        type: string
+
+concurrency:
+  # Two runs creating the same tag is a race with an irreversible loser.
+  group: release-${{ inputs.version }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    name: The version surfaces agree and the tag is free
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # fetch-depth: 0 for the tags: the check below is asking whether a ref
+      # exists, and a shallow clone carries none of them.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # First, and the expensive failure to prevent. On a tag-triggered
+      # workflow this was impossible by construction; here it is the thing
+      # most likely to go wrong, because the dispatch input is free text.
+      - name: The tag does not exist yet
+        env:
+          VER: ${{ inputs.version }}
+        run: |
+          case "$VER" in
+            ""|v*|*[!0-9A-Za-z.+-]*)
+              echo "::error::[$VER] is not a bare version. Pass 0.1.6, not v0.1.6."
+              exit 1
+              ;;
+          esac
+          if git rev-parse -q --verify "refs/tags/v${VER}" >/dev/null; then
+            echo "::error::Tag v${VER} already exists. proxy.golang.org caches a module" \
+                 "version immutably, so it cannot be moved - supersede it instead."
+            exit 1
+          fi
+          echo "v${VER} is free"
+
+      # The repository's own version gate, unchanged and not reimplemented. It
+      # is the only place carve-go states which version it is: go.mod carries
+      # no version and carve.go has no constant, so CHANGELOG.md is the single
+      # version surface and this holds the dispatched version to all of it -
+      # the newest released heading, its date, its link definition, and the
+      # [Unreleased] compare range.
+      - name: The version agrees with CHANGELOG.md
+        env:
+          VER: ${{ inputs.version }}
+        run: ./tools/version-gate.sh "v${VER}"
+
+  release-notes:
+    name: A release draft for this version exists and has notes
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      # `write`, not `read`: a DRAFT release is invisible to a caller without
+      # push access, so under `contents: read` the listing comes back empty and
+      # this gate reports "no release" for a draft sitting right there with
+      # notes in it. See markup-carve/carve-wasm#80.
+      contents: write
+    steps:
+      # Found by LISTING rather than by `gh release view <tag>`: a draft's tag
+      # is not a git ref, so addressing one by tag can match nothing, change
+      # nothing and still exit 0.
+      - name: The draft exists and has notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VER: ${{ inputs.version }}
+        run: |
+          set -uo pipefail
+          release="$(gh api "repos/$GITHUB_REPOSITORY/releases" --paginate \
+            --jq "[.[] | select(.tag_name == \"v${VER}\")] | first")"
+          if [ -z "$release" ]; then
+            echo "::error::no release for v${VER}. Write the notes first:" \
+                 "gh release create v${VER} --draft --notes-file notes.md"
+            echo "::error::if a draft DOES exist, this job could not see it -" \
+                 "check that it still declares contents: write"
+            exit 1
+          fi
+          body="$(printf '%s' "$release" | jq -r '.body // ""')"
+          printf '%s' "$release" | jq -r '"draft=\(.draft) tag=\(.tag_name)"'
+          # A draft with an empty body is the state `gh release create` leaves
+          # behind when the notes were never written, and it reads as ready.
+          if [ "${#body}" -lt 40 ]; then
+            echo "::error::the release for v${VER} carries ${#body} characters of notes." \
+                 "That is not a description of a release."
+            exit 1
+          fi
+          echo "notes: ${#body} characters"
+
+  suite:
+    name: The suite passes against the embedded engine and the spec corpus
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    defaults:
+      # Without this a `run:` step gets `bash -e` and NO pipefail, so
+      # `go test | tee` would report tee's exit status and a failing suite
+      # would leave this gate green.
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check out carve-rs
+        uses: actions/checkout@v7
+        with:
+          repository: markup-carve/carve-rs
+          path: carve-rs
+          fetch-depth: 0
+
+      # --artifact-digest included, as ci.yml runs it: a release whose
+      # carve.wasm.sha256 disagrees with the committed bytes ships a module
+      # whose own digest file is wrong, and a consumer's build trusts that pair.
+      - name: The recorded engine revision matches the embedded artifact
+        run: |
+          python3 carve-rs/tools/check-engine-pin.py \
+            --engine carve-rs --github \
+            --form rev-file --file internal/wasm/REV \
+            --artifact internal/wasm/carve.wasm \
+            --artifact-digest internal/wasm/carve.wasm.sha256
+
+      - name: Resolve the spec commit the embedded engine pins
+        id: pin
+        run: |
+          rev="$(cat internal/wasm/REV)"
+          spec="$(git -C carve-rs ls-tree "$rev" tests/spec | awk '{print $3}' || true)"
+          if [ -z "$spec" ]; then
+            echo "::error::internal/wasm/REV names $rev, which has no tests/spec gitlink in" \
+                 "carve-rs, so there is no spec commit to hold this artifact to."
+            exit 1
+          fi
+          echo "carve-rs $rev pins spec $spec"
+          echo "spec=$spec" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the spec corpus that engine was written against
+        uses: actions/checkout@v7
+        with:
+          repository: markup-carve/carve
+          ref: ${{ steps.pin.outputs.spec }}
+          path: spec
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: stable
+
+      # TestToHTML_ByteIdenticalToNative and its static sibling are the only
+      # checks that compare the embedded WebAssembly against the native engine,
+      # and they skip in every ci.yml job because CARVE_BIN is unset. The native
+      # side MUST be the revision internal/wasm/REV names: built from anything
+      # else it cannot tell "the wasm is wrong" from "my reference is old".
+      - name: Build the native carve CLI at the embedded revision
+        run: |
+          rev="$(cat internal/wasm/REV)"
+          git -C carve-rs checkout --detach "$rev"
+          cargo build --release --manifest-path carve-rs/Cargo.toml --bin carve
+          echo "CARVE_BIN=$GITHUB_WORKSPACE/carve-rs/target/release/carve" >> "$GITHUB_ENV"
+
+      - name: Suite, with the corpus and the native engine live
+        env:
+          CARVE_SPEC_CORPUS: ${{ github.workspace }}/spec/tests/corpus
+        run: go test ./... 2>&1 | tee suite.log
+
+      # A skipped test reports success over the thing it never compared, and
+      # both native checks skip silently on an unset CARVE_BIN. Requiring the
+      # PASS lines is what makes the step above evidence of a comparison rather
+      # than of an exit status.
+      - name: The gated comparisons ran rather than skipped
+        run: |
+          bad=0
+          for test in TestSpecCorpus TestToHTML_ByteIdenticalToNative TestToHTMLStatic_ByteIdenticalToNative; do
+            if grep -qE -- "--- PASS: $test \(" suite.log; then
+              echo "ran: $test"
+            else
+              # `|| true` on the greps: a step runs under `set -eo pipefail`, so
+              # a non-matching grep in a command substitution would abort the
+              # step before it could say why.
+              outcome="$(grep -oE -- "--- (PASS|FAIL|SKIP): $test \(.*" suite.log | head -1 || true)"
+              echo "::error::$test did not pass in this run: ${outcome:-it produced no result line at all}"
+              bad=1
+            fi
+          done
+          # Evidence of a measurement rather than of an exit status: the corpus
+          # test can pass over an empty directory far more easily than it can
+          # print a count it did not reach.
+          identical="$(grep -oE '[0-9]+ corpus cases byte-identical' suite.log | tail -1 || true)"
+          if [ -z "$identical" ]; then
+            echo "::error::the run logged no byte-identical corpus count, so nothing was measured against the spec"
+            bad=1
+          else
+            echo "corpus: $identical"
+          fi
+          exit "$bad"
+
+  tag:
+    name: Create the tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [guard, release-notes, suite]
+    # THE APPROVAL GATE, and the ONLY job that carries an environment. GitHub
+    # prompts once per gated JOB, so a second one would ask twice for one
+    # decision, and the second prompt would arrive after the tag already
+    # existed and so could withhold nothing.
+    #
+    # `needs:` makes this unreachable until every gate above is green, so
+    # whoever approves is looking at a passing gate rather than at nothing.
+    environment: release-approval
+    permissions:
+      # Without this the push 403s AFTER the approval has been spent, which
+      # costs a second approval for the same release.
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Push the tag
+        env:
+          VER: ${{ inputs.version }}
+        run: |
+          # Re-checked under the approval: `main` can move while a run waits for
+          # a reviewer, and the gates measured the commit that was current then.
+          ./tools/version-gate.sh "v${VER}"
+          if git rev-parse -q --verify "refs/tags/v${VER}" >/dev/null; then
+            echo "::error::Tag v${VER} appeared while this run waited for approval. Stopping."
+            exit 1
+          fi
+          git tag "v${VER}" "$GITHUB_SHA"
+          git push origin "refs/tags/v${VER}"
+          echo "tagged v${VER} at $GITHUB_SHA"
+
+  publish:
+    name: Publish the release notes
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [tag]
+    # NO `environment:` here - see the comment on `tag`. `needs: [tag]` already
+    # makes this unreachable without the approval.
+    permissions:
+      contents: write
+    steps:
+      # There is no registry step, and that is not an omission. A Go module is
+      # pull-based: proxy.golang.org reads the tag `tag` just pushed and serves
+      # the version on the first fetch. The tag WAS the publish, which is why
+      # every gate had to come before it.
+      #
+      # What is left is the release page. A reader who installs the version has
+      # no notes and no changelog for it while /releases still shows a draft.
+      - name: Un-draft the release for this version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VER: ${{ inputs.version }}
+        run: |
+          set -uo pipefail
+          id="$(gh api "repos/$GITHUB_REPOSITORY/releases" --paginate \
+            --jq "[.[] | select(.tag_name == \"v${VER}\" and .draft)] | first | .id // empty")"
+          if [ -z "$id" ]; then
+            echo "No draft release for v${VER}; nothing to publish."
+            exit 0
+          fi
+          # `tag_name` goes with every PATCH of a release. Omit it on a DRAFT
+          # and GitHub replaces the tag with a generated `untagged-*`
+          # placeholder, because a draft's tag is a string on the object rather
+          # than a git ref. `-F` (not `-f`) for draft, so it is sent as a
+          # boolean: the string "false" is truthy and would publish anyway.
+          gh api "repos/$GITHUB_REPOSITORY/releases/$id" -X PATCH \
+            -f tag_name="v${VER}" -F draft=false --jq '"published \(.tag_name)"'
+          # Read it back: an exit status does not tell you whether the tag survived.
+          gh api "repos/$GITHUB_REPOSITORY/releases/$id" \
+            --jq '"draft=\(.draft) tag=\(.tag_name)"'
