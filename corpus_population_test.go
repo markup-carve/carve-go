@@ -142,7 +142,8 @@ func requireWholeCorpus(t *testing.T, corpusDir string, got int, what string) {
 	declared := declaredCorpusSize(t, corpusDir)
 	if got != declared {
 		t.Fatalf("%s: %d, but the spec's example pages declare %d. Every ::: compare block in "+
-			"resources/examples/{core,extensions,edge-cases}.md declares its fence pairs, so a difference "+
+			"resources/examples/{core,extensions,edge-cases}.md yields one corpus pair per carve fence, so a "+
+			"difference "+
 			"means the corpus at %s is not the one those pages describe - a truncated or stale "+
 			"checkout, a wrong CARVE_SPEC_CORPUS, or a corpus that needs regenerating "+
 			"(npm run corpus:build in the spec repository). It does not mean this run was clean.",
@@ -171,6 +172,39 @@ func TestDeclaredCorpusCountsPairsAndIgnoresFencedMarkup(t *testing.T) {
 		t.Fatalf("got %d pairs, want 2", got)
 	}
 	requireWholeCorpus(t, corpus, 2, "complete")
+}
+
+// A block holding SEVERAL pairs is the case the old block-counting loop could
+// not see, and the fixture above cannot distinguish: it reports 2 under either
+// counter. Three pairs in one block separate them.
+func TestDeclaredCorpusCountsEveryPairInOneBlock(t *testing.T) {
+	root := t.TempDir()
+	examples := filepath.Join(root, "resources", "examples")
+	if err := os.MkdirAll(examples, 0755); err != nil {
+		t.Fatal(err)
+	}
+	source := strings.Join([]string{
+		"::: compare",
+		"```carve", "one", "```", "```html", "<p>one</p>", "```",
+		"````carve", "```carve", "nested, not a pair", "```", "````", "```html", "<pre>two</pre>", "```",
+		"```carve", "three", "```", "```html", "<p>three</p>", "```",
+		":::",
+		"```carve", "outside any block", "```",
+		"",
+	}, "\n")
+	for i, page := range specExamplePages {
+		content := ""
+		if i == 0 {
+			content = source
+		}
+		if err := os.WriteFile(filepath.Join(examples, page), []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	corpus := filepath.Join(root, "tests", "corpus")
+	if got := declaredCorpusSize(t, corpus); got != 3 {
+		t.Fatalf("got %d pairs, want 3", got)
+	}
 }
 
 func TestCorpusPopulationRefusals(t *testing.T) {
