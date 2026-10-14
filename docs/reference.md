@@ -94,9 +94,9 @@ func FromMarkdown(source string) (MigrationResult, error)
 // ImportSafe, which is the right default for untrusted input; ImportSemantic
 // is the other mode the engine accepts. The name is passed through rather than
 // checked against a list kept here, so an unaccepted mode comes back as the
-// engine's own usage error. At the embedded engine (carve-rs 0.1.8) the two
-// modes agree on every input measured, so what the selection buys today is a
-// MigrationReport.Mode that reports what actually ran.
+// engine's own usage error. At the embedded engine (carve-rs 0.1.9) the two
+// modes write different Carve for 7 of the 2508 spec corpus documents' HTML,
+// and MigrationReport.Mode reports which one ran.
 
 // Reports use schema version 2. Fidelity is preserved, normalized, degraded,
 // or dropped; confidence is exact, inferred, or fallback. Both importers return

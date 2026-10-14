@@ -9,19 +9,24 @@ line of Go changing, so rebuilds get an entry of their own.
 
 ## [Unreleased]
 
-- Rebuild the embedded Rust engine from `889e916f` for current spec conformance.
+## [0.1.6] - 2026-10-14
 
-- Adjacent alphabetic and Roman ordered lists stay separate through HTML import and formatting. Three blank lines end dialect lookahead.
+### Breaking
 
-- Markdown import reports assess construct fidelity, including preserved constructs and conversion losses.
+- The embedded engine is carve-rs 0.1.9, so the AST follows contract 1.1: a cell joined across lines holds a `cell_wrap` node between its text halves, tables carry `separatorWidths`, and `delim` and `bulletChar` appear only for `)` and `*` (#96, markup-carve/carve-rs#2482).
+- New loss codes such as `carrier-attribute-dropped`, `list-style-dropped` and `frontmatter-synthesized`. A check that fails on unknown codes has to list them (#96, markup-carve/carve-rs#2523).
+- Image alt text and quoted include paths decode punctuation escapes, so double a literal backslash. The include rename warning's rule id is now `include-id-rename` instead of `include-heading-id-rename` (#92, markup-carve/carve#2772).
 
-- Under the article profile, denied raw blocks become code blocks that retain their escaped payload.
+### Fixes
 
-- Ordered lists retain their authored delimiter in HTML as `data-delim`. Markdown import keeps `)` list delimiters and reports their fidelity as preserved. Markdown import preserves trailing form feeds and vertical tabs. Braced closers stay inside their bracket and code scopes.
+- A Markdown import keeps an empty diagnostic list when the engine supplied a report, and uses the fallback warning only when the report is absent (#92).
+- Adjacent alphabetic and Roman ordered lists stay separate through HTML import and formatting (#94).
+- Under the article profile, denied raw blocks become code blocks that keep their payload (#94).
 
-- **Breaking:** Engine compatibility: image alt text and quoted include paths decode ASCII punctuation escapes; escape a literal backslash twice. Include rename warnings use `include-id-rename` instead of `include-heading-id-rename`.
+### Improvements
 
-- Preserve an empty Markdown diagnostic list when the engine supplied a report; use the fallback warning only when the report is absent.
+- Markdown import reports assess construct fidelity, including preserved constructs as well as losses (#94).
+- Ordered lists keep a `)` delimiter as `data-delim` in HTML and through Markdown import (#94).
 
 ## [0.1.5] - 2026-10-07
 
@@ -232,7 +237,8 @@ First release. `ToHTML` and the AST surface over a carve-rs engine embedded as
 WebAssembly and driven with wazero, so the module has no cgo and no external
 process.
 
-[Unreleased]: https://github.com/markup-carve/carve-go/compare/v0.1.5...HEAD
+[Unreleased]: https://github.com/markup-carve/carve-go/compare/v0.1.6...HEAD
+[0.1.6]: https://github.com/markup-carve/carve-go/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/markup-carve/carve-go/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/markup-carve/carve-go/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/markup-carve/carve-go/compare/v0.1.2...v0.1.3
