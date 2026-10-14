@@ -118,10 +118,9 @@ func TestParseASTOmitsASpanItCannotPlace(t *testing.T) {
 	// Section 4: "MUST NOT emit pos with invented values". The engine refuses a
 	// span only where no source range holds the text.
 	//
-	// A `+` line continues the cell above it, and the two halves are joined by
-	// a MANUFACTURED space: the source has a line break there, so that space
-	// selects nothing and carries no position. The halves on either side are
-	// verbatim slices and do carry one.
+	// A `+` line continues the cell above it. Since AST contract 1.1 the join
+	// is a `cell_wrap` node rather than a manufactured space inside a text
+	// value, so every text node is a verbatim slice and carries a position.
 	//
 	// This used to assert that a plain cell's text was unplaceable, on the
 	// grounds that unescaping `\|` reassembles it. That stopped being true -
@@ -131,9 +130,12 @@ func TestParseASTOmitsASpanItCannotPlace(t *testing.T) {
 	doc := parse(t, "|= H |\n| a |\n+ b |\n")
 
 	var placed []string
-	var unplaced int
+	var unplaced, wraps int
 	var walk func(n node)
 	walk = func(n node) {
+		if n.Type == "cell_wrap" {
+			wraps++
+		}
 		if n.Type == "text" {
 			if n.Pos == nil {
 				unplaced++
@@ -169,8 +171,11 @@ func TestParseASTOmitsASpanItCannotPlace(t *testing.T) {
 		walk(n)
 	}
 
-	if unplaced != 1 {
-		t.Errorf("unplaced text nodes = %d, want exactly the manufactured joiner", unplaced)
+	if unplaced != 0 {
+		t.Errorf("unplaced text nodes = %d, want 0: the join is a cell_wrap node", unplaced)
+	}
+	if wraps != 1 {
+		t.Errorf("cell_wrap nodes = %d, want exactly one for the + line", wraps)
 	}
 	if len(placed) == 0 {
 		t.Error("every verbatim half of a continued cell should carry a position")
