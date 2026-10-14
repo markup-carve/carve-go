@@ -27,6 +27,28 @@ func TestToMarkdown_TranslatesCarveEmphasisToMarkdown(t *testing.T) {
 	}
 }
 
+func TestToMarkdown_PreservesAngleAutolinks(t *testing.T) {
+	for _, source := range []string{
+		"<https://github.com/markup-carve>",
+		"<user@example.com>",
+	} {
+		markdown, err := ToMarkdown(source)
+		if err != nil {
+			t.Fatalf("ToMarkdown(%q): %v", source, err)
+		}
+		if markdown != source+"\n" {
+			t.Errorf("ToMarkdown(%q) = %q", source, markdown)
+		}
+		imported, err := FromMarkdown(markdown)
+		if err != nil {
+			t.Fatalf("FromMarkdown(%q): %v", markdown, err)
+		}
+		if strings.TrimSpace(imported.Value) != source {
+			t.Errorf("FromMarkdown(%q) = %q", markdown, imported.Value)
+		}
+	}
+}
+
 func TestToPlainText_DropsEveryDelimiter(t *testing.T) {
 	out, err := ToPlainText("# Title\n\n/em/ and *strong*\n")
 	if err != nil {
