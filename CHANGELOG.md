@@ -9,7 +9,7 @@ line of Go changing, so rebuilds get an entry of their own.
 
 ## [Unreleased]
 
-- Rebuild the embedded Rust engine from `889e916f` for current spec conformance.
+- The embedded engine is carve-rs 0.1.9, built from its release tag. Its AST follows contract 1.1: a cell joined across lines holds a `cell_wrap` node, a table carries `separatorWidths`, and `delim` and `bulletChar` appear only for `)` and `*`. New loss codes include `carrier-attribute-dropped`, `list-style-dropped` and `frontmatter-synthesized`.
 
 - Adjacent alphabetic and Roman ordered lists stay separate through HTML import and formatting. Three blank lines end dialect lookahead.
 
