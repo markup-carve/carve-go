@@ -94,9 +94,7 @@ func FromMarkdown(source string) (MigrationResult, error)
 // ImportSafe, which is the right default for untrusted input; ImportSemantic
 // is the other mode the engine accepts. The name is passed through rather than
 // checked against a list kept here, so an unaccepted mode comes back as the
-// engine's own usage error. At the embedded engine (carve-rs 0.1.9) the two
-// modes write different Carve for 7 of the 2508 spec corpus documents' HTML,
-// and MigrationReport.Mode reports which one ran.
+// engine's own usage error. MigrationReport.Mode reports which mode ran.
 
 // Reports use schema version 2. Fidelity is preserved, normalized, degraded,
 // or dropped; confidence is exact, inferred, or fallback. Both importers return
@@ -266,10 +264,10 @@ another's output.
 ```go
 raw, err := carve.ParseAST("# Title\n\nBody[^a].\n\n[^a]: note\n")
 // raw is json.RawMessage:
-// {"type":"document","children":[{"type":"heading",...}],"srcByteLength":34}
+// {"type":"document","children":[{"type":"heading",...}],"srcByteLength":34,"astVersion":"1.2"}
 ```
 
-The root carries exactly `type`, `children` and `srcByteLength`; frontmatter and
+The root carries `type`, `children`, `srcByteLength` and `astVersion`; frontmatter and
 footnote definitions are block nodes inside `children`, not root fields. Every
 node except the root carries `pos` when the engine could place it - 1-based
 lines and columns, 0-based offsets, ends exclusive, counted in Unicode

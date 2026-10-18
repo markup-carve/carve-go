@@ -49,9 +49,9 @@ func parse(t *testing.T, source string) node {
 	return doc
 }
 
-func TestParseASTRootCarriesExactlyThreeFields(t *testing.T) {
-	// PART 12 section 7. Frontmatter and footnote definitions are block nodes in
-	// the tree, not root fields.
+func TestParseASTRootCarriesVersionAndTreeFields(t *testing.T) {
+	// Frontmatter and footnote definitions are block nodes in the tree.
+	// The engine now records the AST contract version on the root.
 	raw, err := carve.ParseAST("---\ntitle: T\n---\n\nBody[^a].\n\n[^a]: note\n")
 	if err != nil {
 		t.Fatalf("ParseAST: %v", err)
@@ -60,13 +60,16 @@ func TestParseASTRootCarriesExactlyThreeFields(t *testing.T) {
 	if err := json.Unmarshal(raw, &root); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if len(root) != 3 {
-		t.Fatalf("root has %d fields, want 3: %v", len(root), keys(root))
+	if len(root) != 4 {
+		t.Fatalf("root has %d fields, want 4: %v", len(root), keys(root))
 	}
-	for _, want := range []string{"type", "children", "srcByteLength"} {
+	for _, want := range []string{"type", "children", "srcByteLength", "astVersion"} {
 		if _, ok := root[want]; !ok {
 			t.Errorf("root is missing %q (has %v)", want, keys(root))
 		}
+	}
+	if string(root["astVersion"]) != `"1.2"` {
+		t.Errorf("unexpected AST contract version: %s", root["astVersion"])
 	}
 
 	doc := parse(t, "---\ntitle: T\n---\n\nBody[^a].\n\n[^a]: note\n")

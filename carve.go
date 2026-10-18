@@ -634,8 +634,8 @@ func renderArgs(format OutputFormat, opts Options) ([]string, error) {
 //
 // The PART 12 exchange shape (https://markup-carve.github.io/carve/ast-json):
 // the same tree every Carve engine publishes, so a consumer written against one
-// implementation reads another's output. The root carries exactly "type",
-// "children" and "srcByteLength"; frontmatter and footnote definitions are
+// implementation reads another's output. The root carries "type", "children",
+// "srcByteLength" and "astVersion"; frontmatter and footnote definitions are
 // block nodes inside "children", not root fields.
 //
 // Every node except the root carries "pos" when the engine could place it -
