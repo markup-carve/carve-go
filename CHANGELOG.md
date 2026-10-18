@@ -9,6 +9,20 @@ line of Go changing, so rebuilds get an entry of their own.
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-10-18
+
+### Breaking
+
+- AST roots now carry `astVersion: "1.2"`; empty destinations now parse as links and images (#99).
+
+### Fixes
+
+- Angle autolinks survive Markdown conversion and round trips (#98).
+
+### Improvements
+
+- Update to carve-rs 0.1.10 for CSV and TSV table fences and list continuation indentation in plain text (#99).
+
 ## [0.1.6] - 2026-10-14
 
 ### Breaking
@@ -237,7 +251,8 @@ First release. `ToHTML` and the AST surface over a carve-rs engine embedded as
 WebAssembly and driven with wazero, so the module has no cgo and no external
 process.
 
-[Unreleased]: https://github.com/markup-carve/carve-go/compare/v0.1.6...HEAD
+[Unreleased]: https://github.com/markup-carve/carve-go/compare/v0.1.7...HEAD
+[0.1.7]: https://github.com/markup-carve/carve-go/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/markup-carve/carve-go/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/markup-carve/carve-go/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/markup-carve/carve-go/compare/v0.1.3...v0.1.4
