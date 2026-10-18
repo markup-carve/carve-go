@@ -6,12 +6,15 @@ import (
 )
 
 func TestRust0110EngineFeatures(t *testing.T) {
-	for _, source := range []string{"[x]()", "![alt]()"} {
+	for source, want := range map[string]string{
+		"[x]()":    `<a href="">x</a>`,
+		"![alt]()": `<img src="" alt="alt">`,
+	} {
 		out, err := ToHTML(source)
 		if err != nil {
 			t.Fatalf("ToHTML(%q): %v", source, err)
 		}
-		if !strings.Contains(out, `=""`) {
+		if !strings.Contains(out, want) {
 			t.Errorf("empty destination lost for %q: %q", source, out)
 		}
 	}

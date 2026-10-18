@@ -68,6 +68,9 @@ func TestParseASTRootCarriesVersionAndTreeFields(t *testing.T) {
 			t.Errorf("root is missing %q (has %v)", want, keys(root))
 		}
 	}
+	if string(root["astVersion"]) != `"1.2"` {
+		t.Errorf("unexpected AST contract version: %s", root["astVersion"])
+	}
 
 	doc := parse(t, "---\ntitle: T\n---\n\nBody[^a].\n\n[^a]: note\n")
 	var types []string
