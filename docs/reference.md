@@ -69,6 +69,7 @@ type Options struct {
 	Safe       bool              // escape =html raw blocks/spans (CLI --safe)
 	Profile    string            // full|article|comment|minimal (CLI --profile)
 	Symbols    map[string]string // render :name: shortcodes (CLI --symbol NAME=VALUE)
+	AlignTables bool             // pad table columns; OutputCarve only (CLI fmt --align-tables)
 }
 
 // Non-HTML output targets. Every one of these is the same embedded engine with
@@ -84,6 +85,14 @@ func ToANSIContext(ctx context.Context, source string) (string, error)
 // `carve fmt` performs, returned as a string. It is idempotent.
 func ToCarve(source string) (string, error)
 func ToCarveContext(ctx context.Context, source string) (string, error)
+
+// ToCarveOptions writes Carve under Options; AlignTables and Profile are the
+// fields the Carve writer reads.
+func ToCarveOptions(source string, opts Options) (string, error)
+func ToCarveOptionsContext(ctx context.Context, source string, opts Options) (string, error)
+
+// SelectIncludeRegion finds `@region:name` in a file's text (spec I1b).
+func SelectIncludeRegion(source, name string, mode RegionMode) (IncludeRegion, error)
 
 // Import foreign markup into canonical Carve with a machine-readable report.
 func FromHTML(source string) (MigrationResult, error)
@@ -505,7 +514,9 @@ The refused half is read off the warnings and is capped with them, so a result
 with `SuppressedWarnings > 0` should be treated as "rebuild unconditionally".
 
 `res.Warnings` carries one entry per degraded directive, each with a stable rule
-id (`include-unresolved`, `include-cycle`, `include-depth`, ...). A degraded
+id (`include-unresolved`, `include-non-text`, `include-cycle`, `include-depth`,
+`include-region-invalid`, ...; the full list is on `IncludeWarning.Rule`).
+`include-non-text` is a target that is not text: NUL bytes or ill-formed UTF-8. A degraded
 directive stays literal in the output; inclusion never drops one silently. The
 messages name no host path: "outside the root" and "not there" both surface as
 `include-unresolved` so a rendered page cannot report the difference.
@@ -513,6 +524,31 @@ messages name no host path: "outside the root" and "not there" both surface as
 The engine's section 19 limits apply with their spec defaults and are not
 configurable from Go: depth 16, a byte budget of max(1 MB, 8x the root source),
 1000 resolver calls, 100 retained warnings, and a 4 MiB per-file read cap.
+
+### Include regions
+
+`SelectIncludeRegion` answers where `@region:name` sits in a file, with the
+marker rules expansion uses, so an editor jumping to a region lands where an
+include would cut:
+
+```go
+r, err := carve.SelectIncludeRegion("%% #region setup\na\nb\n%% #endregion\n",
+    "setup", carve.RegionCarve)
+// r == carve.IncludeRegion{Start: 2, End: 3}
+```
+
+`RegionCarve` reads only `%% #region` / `%% #endregion`. `RegionCode` also
+reads the source-comment forms a `@code` include honors: `// #region`,
+`-- #region`, `/* #region */`, `<!-- #region -->` and a bare `#region`. The
+result is the 1-based, inclusive range of content lines; an empty region has
+`End == Start-1`. A missing region, or a malformed or unpaired marker anywhere
+in the file, returns an `*IncludeRegionError` whose `Rule()` is
+`include-region-invalid`.
+
+The engine CLI has no entry point for this lookup, so it is a Go port of
+carve-rs `select_include_region`. The tests hold it to the embedded engine:
+each region must cut the same lines through `RenderWithIncludes` as the range
+the port returns.
 
 > [!IMPORTANT]
 > `Root` is mounted into the guest as its only filesystem, but **the mount is

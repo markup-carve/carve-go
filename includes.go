@@ -64,8 +64,11 @@ type Include struct {
 // inclusion never silently drops one.
 type IncludeWarning struct {
 	// Rule is the stable, cross-engine id: "include-unresolved",
-	// "include-denied", "include-cycle", "include-depth", "include-budget",
-	// "include-call-limit", "include-section-missing", "include-heading-clamp".
+	// "include-denied", "include-non-text", "include-cycle", "include-depth",
+	// "include-budget", "include-call-limit", "include-section",
+	// "include-region-invalid", "include-selection-conflict",
+	// "include-unknown-option", "include-heading-clamp", "include-id-rename",
+	// "include-footnote-rename", "include-block-in-inline".
 	Rule string
 	// Message is the engine's human-readable explanation. Section I7 keeps host
 	// paths out of it: "outside the root" and "not there" both surface as
@@ -145,6 +148,10 @@ func RenderWithIncludesContext(
 ) (IncludeResult, error) {
 	if opts.Static && format != OutputHTML {
 		return IncludeResult{}, fmt.Errorf("carve: Options.Static applies to HTML only, not %q", format.flag())
+	}
+	if opts.AlignTables {
+		return IncludeResult{}, fmt.Errorf("carve: Options.AlignTables does not apply with includes: " +
+			"the engine aligns tables in `carve fmt`, which does not expand them")
 	}
 	docPath, err := inc.guestDocPath()
 	if err != nil {

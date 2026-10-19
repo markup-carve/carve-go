@@ -46,6 +46,9 @@ html, err := carve.ToHTMLOptions(source, carve.Options{
 })
 ```
 
+`ToCarveOptions(source, carve.Options{AlignTables: true})` formats with table
+columns padded to a shared width, as `carve fmt --align-tables` does.
+
 ## Migration and AST access
 
 `FromHTML` and `FromMarkdown` return canonical Carve with a structured fidelity
@@ -71,6 +74,7 @@ for the complete boundary.
 root, track dependencies, and refuse traversal outside that root. String-only
 render functions leave include directives literal. Treat inclusion as a
 feature for document trees you control, not for untrusted input.
+`SelectIncludeRegion` finds the lines of an `@region:name` in a file.
 
 See [File inclusion](docs/reference.md#file-inclusion) for containment,
 budgets, dependency identities, warnings, and symlink handling.
