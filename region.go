@@ -43,7 +43,7 @@ func (e *IncludeRegionError) Rule() string { return "include-region-invalid" }
 // what expansion cuts.
 //
 // The engine CLI has no entry point for this, so it is a line-for-line port of
-// carve-rs `select_include_region`; region_test.go holds it to the engine's
+// carve-rs `select_include_region`; align_region_test.go holds it to the engine's
 // answers.
 func SelectIncludeRegion(source, name string, mode RegionMode) (IncludeRegion, error) {
 	start, end, ok := regionRange(source, name, mode == RegionCode)

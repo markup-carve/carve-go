@@ -367,3 +367,17 @@ func equalDeps(got, want []IncludeDependency) bool {
 	}
 	return true
 }
+
+// carve-rs 0.1.11 made safe mode leave include directives literal
+// (markup-carve/carve-rs#2911): untrusted input does not get to read files.
+func TestSafeModeLeavesIncludesLiteral(t *testing.T) {
+	root, _ := includeTree(t)
+	res, err := RenderWithIncludes("{{ child.crv }}\n", OutputHTML, Options{Safe: true},
+		Include{Root: root, SourcePath: filepath.Join(root, "posts", "main.crv")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Output != "<p>{{ child.crv }}</p>\n" || len(res.Dependencies) != 0 {
+		t.Errorf("safe mode must not read the include, got %q, %#v", res.Output, res.Dependencies)
+	}
+}

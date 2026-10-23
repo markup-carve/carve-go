@@ -136,7 +136,8 @@ type Options struct {
 	Extensions []string
 
 	// Safe escapes =html raw blocks and spans instead of emitting them. It
-	// maps to the engine CLI flag --safe (--no-raw-html).
+	// maps to the engine CLI flag --safe (--no-raw-html). It also leaves
+	// include directives literal in RenderWithIncludes.
 	//
 	// Carve's normative hardening is always on and needs no option here:
 	// dangerous URL schemes are blanked, event-handler attributes dropped,

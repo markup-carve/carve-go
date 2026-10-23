@@ -66,8 +66,9 @@ type IncludeWarning struct {
 	// Rule is the stable, cross-engine id: "include-unresolved",
 	// "include-denied", "include-non-text", "include-cycle", "include-depth",
 	// "include-budget", "include-call-limit", "include-section",
-	// "include-region-invalid", "include-selection-conflict",
-	// "include-unknown-option", "include-heading-clamp", "include-id-rename",
+	// "include-region-invalid", "include-lines-out-of-range",
+	// "include-selection-conflict", "include-unknown-option",
+	// "include-duplicate-option", "include-heading-clamp", "include-id-rename",
 	// "include-footnote-rename", "include-block-in-inline".
 	Rule string
 	// Message is the engine's human-readable explanation. Section I7 keeps host

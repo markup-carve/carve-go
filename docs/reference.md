@@ -177,16 +177,25 @@ func LintWithOptions(source string, opts LintOptions) ([]LintFinding, error)
 func LintWithOptionsContext(ctx context.Context, source string, opts LintOptions) ([]LintFinding, error)
 
 type LintFinding struct {
-	Path    string // "<stdin>" for source passed here
-	Line    int    // 1-based
-	Column  int    // 1-based
-	Rule    string // the engine's rule id, e.g. broken-fragment-link
-	Message string
+	Path       string     // "<stdin>", or a host path under LintOptions.Include
+	Line       int        // 1-based
+	Column     int        // 1-based, in codepoints
+	Rule       string     // the engine's rule id, e.g. broken-fragment-link
+	Message    string
+	File       string     // included file, relative to Include.Root; "" for the document
+	IncludedBy []LintSite // include chain, the linted document first
+}
+
+type LintSite struct {
+	File   string // relative to Include.Root
+	Line   int
+	Column int
 }
 
 type LintOptions struct {
 	Extensions []string // one --extension KEY each; `citations` is the only key the pass takes
 	Bundle     bool     // --extensions
+	Include    *Include // lint included files too (--include-root)
 }
 ```
 
@@ -206,6 +215,24 @@ extension.
 
 The accepted extension keys are not listed in this package. An unaccepted one
 comes back as the engine's own error naming what it knows.
+
+**Included files.** With `LintOptions.Include`, which takes the same `Root` and
+`SourcePath` as `RenderWithIncludes`, the pass also lints every included Carve
+file and reports directives that stay literal, such as `include-unresolved` or
+`include-cycle`. Such a finding names its `File` relative to the root and the
+`IncludedBy` chain, top-level document first; `Path` is the host path of the
+file it arose in. The document's own findings keep `File` empty and an empty
+`IncludedBy`.
+
+```go
+findings, err := carve.LintWithOptions(source, carve.LintOptions{
+	Include: &carve.Include{Root: "/site/content", SourcePath: "/site/content/book.crv"},
+})
+```
+
+The engine CLI reports no source offsets for a finding, so `LintFinding` has no
+`Start`/`End` pair, unlike carve-rb's `Carve.lint`. The include budgets are the
+engine defaults listed under [File inclusion](#file-inclusion).
 
 ### Render losses
 
@@ -495,6 +522,9 @@ res, err := carve.RenderWithIncludes(body, carve.OutputHTML, carve.Options{},
     })
 // res.Output, res.Warnings, res.Dependencies
 ```
+
+`Options.Safe` turns inclusion off: under safe mode the directives stay literal
+and nothing is read, so untrusted input cannot pull in files.
 
 `Root` bounds the expansion (spec I10) and must be **absolute**. A relative one
 is refused rather than absolutized: every canonicalizer resolves a relative path
