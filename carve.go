@@ -136,7 +136,8 @@ type Options struct {
 	Extensions []string
 
 	// Safe escapes =html raw blocks and spans instead of emitting them. It
-	// maps to the engine CLI flag --safe (--no-raw-html).
+	// maps to the engine CLI flag --safe (--no-raw-html). It also leaves
+	// include directives literal in RenderWithIncludes.
 	//
 	// Carve's normative hardening is always on and needs no option here:
 	// dangerous URL schemes are blanked, event-handler attributes dropped,
@@ -203,6 +204,18 @@ type Options struct {
 	// nothing, and it is what the engine embedded before
 	// markup-carve/carve-rs#1194 did.
 	Profile string
+
+	// AlignTables pads table columns to a shared width when writing Carve (the
+	// PART 11 aligned form). It applies to OutputCarve only and maps to the
+	// engine's `carve fmt --align-tables`, because the engine CLI takes the
+	// flag on `fmt` and not on `--carve`.
+	//
+	// It cannot be combined with Profile: `fmt` writes with the engine's
+	// default options, so a profile and its length cap would not apply. That
+	// pairing, any format other than OutputCarve, and RenderWithIncludes are
+	// refused with an error. Extensions, Safe and Symbols are inert on the
+	// Carve writer either way.
+	AlignTables bool
 }
 
 // ToHTML renders Carve source to HTML using the embedded engine.
@@ -347,6 +360,19 @@ func ToCarve(source string) (string, error) {
 // ToCarveContext is ToCarve with a caller-supplied context.
 func ToCarveContext(ctx context.Context, source string) (string, error) {
 	return RenderContext(ctx, source, OutputCarve, Options{})
+}
+
+// ToCarveOptions is ToCarve with options; Options.AlignTables and
+// Options.Profile are the ones the Carve writer reads.
+//
+// Uses context.Background(); prefer ToCarveOptionsContext for untrusted input.
+func ToCarveOptions(source string, opts Options) (string, error) {
+	return RenderContext(context.Background(), source, OutputCarve, opts)
+}
+
+// ToCarveOptionsContext is ToCarveOptions with a caller-supplied context.
+func ToCarveOptionsContext(ctx context.Context, source string, opts Options) (string, error) {
+	return RenderContext(ctx, source, OutputCarve, opts)
 }
 
 // MigrationDiagnostic describes one importer fidelity outcome or limitation.
@@ -598,6 +624,16 @@ func RenderContext(ctx context.Context, source string, format OutputFormat, opts
 // argv[0] is the program name; the engine reads source from stdin when no file
 // argument is given.
 func renderArgs(format OutputFormat, opts Options) ([]string, error) {
+	if opts.AlignTables {
+		if format != OutputCarve {
+			return nil, fmt.Errorf("carve: Options.AlignTables applies to %q only, not %q", OutputCarve.flag(), format.flag())
+		}
+		if opts.Profile != "" {
+			return nil, fmt.Errorf("carve: Options.AlignTables cannot be combined with Options.Profile: " +
+				"the engine aligns tables in `carve fmt`, which does not apply a profile")
+		}
+		return []string{"carve", "fmt", "--align-tables"}, nil
+	}
 	args := []string{"carve", format.flag()}
 	if opts.Static {
 		args = append(args, "--static")

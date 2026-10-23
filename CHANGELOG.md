@@ -9,6 +9,21 @@ line of Go changing, so rebuilds get an entry of their own.
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-10-23
+
+### Breaking
+
+- `Options.Safe` now leaves include directives literal in `RenderWithIncludes`, so untrusted input reads no files (#101, markup-carve/carve-rs#2911).
+- `LintFinding` gained an `IncludedBy` slice, so it can no longer be compared with `==` (#101).
+
+### Improvements
+
+- Update to carve-rs 0.1.11, with its fixes to quote `+` followers, fences in nested containers, description separators and Markdown import (#101).
+- `Options.AlignTables` and `ToCarveOptions` write tables with padded columns (#101, markup-carve/carve#3333).
+- `SelectIncludeRegion` finds the lines of an `@region:name`, with the marker rules of a Carve or a `@code` include (#101).
+- `LintOptions.Include` lints included files too; their findings carry `File` and the `IncludedBy` chain (#101).
+- `IncludeWarning.Rule` documents every include rule id, including `include-non-text` (#101).
+
 ## [0.1.7] - 2026-10-18
 
 ### Breaking
@@ -251,7 +266,8 @@ First release. `ToHTML` and the AST surface over a carve-rs engine embedded as
 WebAssembly and driven with wazero, so the module has no cgo and no external
 process.
 
-[Unreleased]: https://github.com/markup-carve/carve-go/compare/v0.1.7...HEAD
+[Unreleased]: https://github.com/markup-carve/carve-go/compare/v0.1.8...HEAD
+[0.1.8]: https://github.com/markup-carve/carve-go/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/markup-carve/carve-go/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/markup-carve/carve-go/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/markup-carve/carve-go/compare/v0.1.4...v0.1.5

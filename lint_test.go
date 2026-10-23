@@ -1,6 +1,8 @@
 package carve
 
 import (
+	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -25,7 +27,7 @@ func TestLintReportsFindingsWithPositionAndRule(t *testing.T) {
 		t.Fatalf("got %d findings, want %d: %#v", len(findings), len(want), findings)
 	}
 	for i := range want {
-		if findings[i] != want[i] {
+		if !reflect.DeepEqual(findings[i], want[i]) {
 			t.Errorf("finding %d:\n got %#v\nwant %#v", i, findings[i], want[i])
 		}
 	}
@@ -97,7 +99,7 @@ func TestLintRefusesAnUnreadableFindingsLine(t *testing.T) {
 	}
 	want := LintFinding{Path: "a/b.crv", Line: 12, Column: 3, Rule: "some-rule",
 		Message: "Message with - a hyphen."}
-	if len(got) != 1 || got[0] != want {
+	if len(got) != 1 || !reflect.DeepEqual(got[0], want) {
 		t.Errorf("got %#v, want %#v", got, want)
 	}
 }
@@ -112,5 +114,54 @@ func TestLintColumnsCountCodepointsNotBytes(t *testing.T) {
 		if findings[0].Line != 3 || findings[0].Column != 3 {
 			t.Errorf("%q: the column must not move with the byte length: %#v", lead, findings[0])
 		}
+	}
+}
+
+// With an Include the pass follows directives, as `carve lint --include-root`
+// does: a child's finding names its file and the chain that reached it, and a
+// directive that stays literal is a finding of its own.
+func TestLintFollowsIncludesAndReportsTheChain(t *testing.T) {
+	root := t.TempDir()
+	mkdir(t, filepath.Join(root, "parts"))
+	write(t, filepath.Join(root, "parts", "child.crv"), "See [x](#nope).\n")
+	write(t, filepath.Join(root, "parts", "mid.crv"), "Mid.\n\n{{ child.crv }}\n")
+	book := filepath.Join(root, "book.crv")
+	source := "Own [y](#gone).\n\n{{ parts/mid.crv }}\n\n{{ missing.crv }}\n"
+
+	got, err := LintWithOptions(source, LintOptions{Include: &Include{Root: root, SourcePath: book}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []LintFinding{
+		{Path: book, Line: 1, Column: 5, Rule: "broken-fragment-link",
+			Message:    `Link to "#gone" matches no id in this document, so the link goes nowhere.`,
+			IncludedBy: []LintSite{}},
+		{Path: filepath.Join(root, "parts", "child.crv"), Line: 1, Column: 5, Rule: "broken-fragment-link",
+			Message: `Link to "#nope" matches no id in this document, so the link goes nowhere.`,
+			File:    "parts/child.crv",
+			IncludedBy: []LintSite{
+				{File: "book.crv", Line: 3, Column: 1},
+				{File: "parts/mid.crv", Line: 3, Column: 1},
+			}},
+	}
+	if len(got) != 3 {
+		t.Fatalf("want the own finding, the child's and the unresolved directive, got %#v", got)
+	}
+	for i := range want {
+		if !reflect.DeepEqual(got[i], want[i]) {
+			t.Errorf("finding %d:\n got %#v\nwant %#v", i, got[i], want[i])
+		}
+	}
+	if got[2].Rule != "include-unresolved" || got[2].Line != 5 {
+		t.Errorf("the literal directive must be reported at its line, got %#v", got[2])
+	}
+
+	// Without an Include nothing is read: the directives are inert text.
+	plain, err := Lint(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plain) != 1 || plain[0].File != "" || plain[0].IncludedBy != nil {
+		t.Errorf("without an Include only the own finding is reported, got %#v", plain)
 	}
 }
