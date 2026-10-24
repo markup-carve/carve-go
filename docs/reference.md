@@ -268,11 +268,12 @@ not tell from unset.
 also returned as the second value, so a caller need not type-assert to find out
 what was lost. The rendered string is empty on that path.
 
-**The allow-list is the engine's.** `--allow-loss` accepts `raw-format-dropped`
-and `ruby-flattened` at the embedded engine and deliberately not
-`destination-denied`, so a strict render of a link to a denied scheme cannot be
-waived. Passing a code the engine does not take is its own usage error rather
-than a list duplicated here.
+**The allow-list is the engine's.** `--allow-loss` accepts the Markdown
+loss codes `markdown-container-flattened`, `markdown-caption-flattened`,
+`markdown-attributes-dropped`, and `raw-html-escaped`, along with the existing
+render loss codes. It does not accept `destination-denied`, so a strict render
+of a link to a denied scheme cannot be waived. Passing an unknown code is a
+usage error.
 
 `RenderReport.Raw` holds the engine's report verbatim, so a field this package
 has not modeled yet is still reachable. A test walks every key the engine emits

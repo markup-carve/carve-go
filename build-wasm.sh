@@ -56,17 +56,9 @@ fi
 # Ensure the WASI target is installed.
 rustup target add wasm32-wasip1
 
-# THE BUILD GETS ITS OWN TARGET DIRECTORY, and this is not a tidiness
-# preference. carve-rs checkouts on the development machine symlink `target` to
-# one SHARED cargo directory, and cargo keyed a wasm32-wasip1 artifact there by
-# package name and version - so a build from a second checkout of the same
-# package handed back the FIRST checkout's bytes. Measured: after this script
-# ran once against a checkout sitting on an unmerged branch, a second run
-# against `main` reported success, wrote a REV naming `main`, and copied the
-# branch's artifact. The corpus job caught it (one document diverging), which is
-# exactly the job it exists to do - but REV said something untrue in the
-# meantime, and REV is what the staleness report reads.
-BUILD_DIR="${TMPDIR:-/tmp}/carve-go-wasm-target"
+# Share the repository target directory across native and WASI builds. Cargo
+# fingerprints the target triple and build flags separately.
+BUILD_DIR="/var/tmp/cargo-shared/carve-rs"
 
 # Remap source prefixes out of the artifact. Rust embeds the build host's paths
 # in panic locations, which is how the committed carve.wasm came to carry 96

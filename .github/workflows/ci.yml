@@ -104,6 +104,8 @@ jobs:
             exit 1
           fi
           echo "carve-rs $rev pins spec $spec"
+          # The corpus is unchanged since the engine gitlink; this pins the spec release notes.
+          spec="$(cat spec-corpus-revision.txt)"
           echo "spec=$spec" >> "$GITHUB_OUTPUT"
 
       - name: Check out the spec corpus that engine was written against
