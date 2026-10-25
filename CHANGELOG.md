@@ -287,7 +287,8 @@ First release. `ToHTML` and the AST surface over a carve-rs engine embedded as
 WebAssembly and driven with wazero, so the module has no cgo and no external
 process.
 
-[Unreleased]: https://github.com/markup-carve/carve-go/compare/v0.1.9...HEAD
+[Unreleased]: https://github.com/markup-carve/carve-go/compare/v0.1.10...HEAD
+[0.1.10]: https://github.com/markup-carve/carve-go/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/markup-carve/carve-go/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/markup-carve/carve-go/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/markup-carve/carve-go/compare/v0.1.6...v0.1.7
