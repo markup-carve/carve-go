@@ -9,6 +9,21 @@ line of Go changing, so rebuilds get an entry of their own.
 
 ## [Unreleased]
 
+## [0.1.10] - 2026-10-25
+
+Task lists carry progress and blocked states through the Go binding. Rendering and import follow the 0.1.13 engine fixes.
+
+### Fixes
+
+- List items stay open after line comments. Empty link destinations keep literal tabs, and Markdown destinations keep escaped parentheses (#105).
+- HTML import preserves header rowspans and empty header alignment. Markdown export reports a dropped title on a fence without a language (#105).
+
+### Improvements
+
+- Progress `[/]` and blocked `[!]` tasks render and round trip; `[_]` is accepted as an open task alias (#105).
+
+**Full Changelog**: https://github.com/markup-carve/carve-go/compare/v0.1.9...v0.1.10
+
 ## [0.1.9] - 2026-10-24
 
 ### Improvements
