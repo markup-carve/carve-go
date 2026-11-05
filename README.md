@@ -54,6 +54,8 @@ columns padded to a shared width, as `carve fmt --align-tables` does.
 `FromHTML` and `FromMarkdown` return canonical Carve with a structured fidelity
 report. `ParseAST` exposes the shared serialized AST, and static rendering
 produces self-contained HTML without interactive diagram or math dependencies.
+`DecisionTrace` returns the engine's block decision trace, which shows why
+each line landed in the block it did.
 
 The [API reference](docs/reference.md#usage) documents the main functions,
 options, output targets, AST access, and migration-report rules.

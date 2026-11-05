@@ -86,7 +86,11 @@ func walkNodes(node any, visit func(map[string]any)) {
 		if _, ok := value["type"].(string); ok {
 			visit(value)
 		}
-		for _, child := range value {
+		for key, child := range value {
+			// Attribute maps hold author keys, so {type=text} is not a node.
+			if key == "attrs" {
+				continue
+			}
 			walkNodes(child, visit)
 		}
 	case []any:

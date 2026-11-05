@@ -30,6 +30,15 @@ func TestAlignTablesMatchesTheSpecFixtures(t *testing.T) {
 	}
 	aligned := Options{AlignTables: true}
 	for _, c := range cases {
+		// Roundtrip rows: the canonical writer spells their head with `|=`
+		// cells (CARVE-P11-066), as carve-rs tests/table_alignment_fixtures.rs.
+		canonical, alignedWant := c.Canonical, c.Aligned
+		switch c.Name {
+		case "authored separator":
+			canonical, alignedWant = "|= A |= B |\n| x | yy |\n", "|= A |= B |\n| x  | yy |\n"
+		case "separator colons":
+			canonical, alignedWant = "|={<} A |={>} B |\n| x | right |\n", "|={<} A |={>} B |\n| x     | right |\n"
+		}
 		check := func(label, source string, opts Options, want string) {
 			t.Helper()
 			got, err := ToCarveOptions(source, opts)
@@ -40,11 +49,11 @@ func TestAlignTablesMatchesTheSpecFixtures(t *testing.T) {
 				t.Errorf("%s %s:\n got %q\nwant %q", c.Name, label, got, want)
 			}
 		}
-		check("aligned", c.Canonical, aligned, c.Aligned)
-		check("fixed point", c.Aligned, aligned, c.Aligned)
-		check("default", c.Aligned, Options{}, c.Canonical)
+		check("aligned", c.Canonical, aligned, alignedWant)
+		check("fixed point", alignedWant, aligned, alignedWant)
+		check("default", alignedWant, Options{}, canonical)
 		viaRender, err := Render(c.Canonical, OutputCarve, aligned)
-		if err != nil || viaRender != c.Aligned {
+		if err != nil || viaRender != alignedWant {
 			t.Errorf("%s Render(OutputCarve): %q, %v", c.Name, viaRender, err)
 		}
 		a, errA := ToHTML(c.Aligned)

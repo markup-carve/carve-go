@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -53,6 +54,36 @@ import (
 // them. Order is irrelevant to a count; the list is the generator's.
 var specExamplePages = []string{"core.md", "extensions.md", "edge-cases.md"}
 
+// specExamplePaths lists the page files in examplesDir. Since
+// markup-carve/carve#4132 the edge cases are one file per section under
+// edge-cases/ (scripts/lib/example-sections.mjs); an older spec checkout still
+// has the single edge-cases.md.
+func specExamplePaths(t *testing.T, examplesDir string) []string {
+	t.Helper()
+	paths := []string{}
+	for _, page := range specExamplePages {
+		sectionDir := filepath.Join(examplesDir, strings.TrimSuffix(page, ".md"))
+		entries, err := os.ReadDir(sectionDir)
+		if err != nil {
+			paths = append(paths, filepath.Join(examplesDir, page))
+			continue
+		}
+		sections := []string{}
+		for _, entry := range entries {
+			name := entry.Name()
+			if !entry.IsDir() && strings.HasSuffix(name, ".md") && name != "README.md" {
+				sections = append(sections, filepath.Join(sectionDir, name))
+			}
+		}
+		if len(sections) == 0 {
+			t.Fatalf("no section files in %s", sectionDir)
+		}
+		sort.Strings(sections)
+		paths = append(paths, sections...)
+	}
+	return paths
+}
+
 // Mirrors generate-corpus.mjs: `::: compare`, or a longer colon run, with
 // optional modifiers such as `::: compare no-render`.
 var compareOpenLine = regexp.MustCompile(`^:{3,}\s+compare(\s+\S.*)?$`)
@@ -69,8 +100,7 @@ func declaredCorpusSize(t *testing.T, corpusDir string) int {
 	t.Helper()
 	examplesDir := filepath.Join(corpusDir, "..", "..", "resources", "examples")
 	declared := 0
-	for _, page := range specExamplePages {
-		path := filepath.Join(examplesDir, page)
+	for _, path := range specExamplePaths(t, examplesDir) {
 		blob, err := os.ReadFile(path)
 		if err != nil {
 			// Not a soft skip. Without this file there is no independent
@@ -142,7 +172,7 @@ func requireWholeCorpus(t *testing.T, corpusDir string, got int, what string) {
 	declared := declaredCorpusSize(t, corpusDir)
 	if got != declared {
 		t.Fatalf("%s: %d, but the spec's example pages declare %d. Every ::: compare block in "+
-			"resources/examples/{core,extensions,edge-cases}.md yields one corpus pair per carve fence, so a "+
+			"resources/examples/{core,extensions}.md and edge-cases/ yields one corpus pair per carve fence, so a "+
 			"difference "+
 			"means the corpus at %s is not the one those pages describe - a truncated or stale "+
 			"checkout, a wrong CARVE_SPEC_CORPUS, or a corpus that needs regenerating "+
