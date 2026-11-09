@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -95,11 +96,14 @@ var compareMarkerRun = regexp.MustCompile(`^:{3,}`)
 // <spec>/tests/corpus.
 //
 // Count Carve and HTML fences independently of generated files. Each block
-// must contain equal, nonzero counts; literal fenced content is ignored.
+// must contain equal, nonzero counts; literal fenced content is ignored. Pairs
+// whose Carve input is identical count once: the generator writes one fixture
+// per input (markup-carve/carve#5244).
 func declaredCorpusSize(t *testing.T, corpusDir string) int {
 	t.Helper()
 	examplesDir := filepath.Join(corpusDir, "..", "..", "resources", "examples")
 	declared := 0
+	inputs := map[string]bool{}
 	for _, path := range specExamplePaths(t, examplesDir) {
 		blob, err := os.ReadFile(path)
 		if err != nil {
@@ -111,11 +115,20 @@ func declaredCorpusSize(t *testing.T, corpusDir string) int {
 				"if the spec moved them, this helper has to move with them", path, err)
 		}
 		marker, fence := "", ""
+		var modifiers []string
+		var body []string
+		inCarve := false
 		carveCount, htmlCount := 0, 0
 		for _, line := range strings.Split(string(blob), "\n") {
 			if fence != "" {
 				if strings.HasPrefix(line, fence) && strings.TrimSpace(line[len(fence):]) == "" {
 					fence = ""
+					if inCarve {
+						inputs[fixtureInput(strings.Join(body, "\n"), modifiers)] = true
+						inCarve = false
+					}
+				} else if inCarve {
+					body = append(body, line)
 				}
 				continue
 			}
@@ -126,6 +139,7 @@ func declaredCorpusSize(t *testing.T, corpusDir string) int {
 					switch strings.TrimSpace(line[ticks:]) {
 					case "carve":
 						carveCount++
+						inCarve, body = true, nil
 					case "html":
 						htmlCount++
 					}
@@ -145,6 +159,7 @@ func declaredCorpusSize(t *testing.T, corpusDir string) int {
 			}
 			if compareOpenLine.MatchString(trimmed) {
 				marker = compareMarkerRun.FindString(trimmed)
+				modifiers = strings.Fields(trimmed)[2:]
 				carveCount, htmlCount = 0, 0
 			}
 		}
@@ -156,7 +171,29 @@ func declaredCorpusSize(t *testing.T, corpusDir string) int {
 		t.Fatalf("the corpus source pages under %s declare no ::: compare blocks at all; "+
 			"this is a wiring problem, not a corpus of size zero", examplesDir)
 	}
-	return declared
+	return len(inputs)
+}
+
+// fixtureInput is the fixture the generator writes for one pair, after its
+// applyModifiers.
+func fixtureInput(carve string, modifiers []string) string {
+	out := carve + "\n"
+	if slices.Contains(modifiers, "no-final-newline") {
+		out = strings.TrimSuffix(out, "\n")
+	}
+	if slices.Contains(modifiers, "crlf") {
+		out = strings.ReplaceAll(out, "\n", "\r\n")
+	}
+	if slices.Contains(modifiers, "cr") {
+		out = strings.ReplaceAll(out, "\n", "\r")
+	}
+	if slices.Contains(modifiers, "bom") {
+		out = "\ufeff" + out
+	}
+	if slices.Contains(modifiers, "nul") {
+		out = strings.ReplaceAll(out, "\u2400", "\x00")
+	}
+	return out
 }
 
 // requireWholeCorpus is the only place this package decides whether a corpus
@@ -284,5 +321,27 @@ func TestCorpusPopulationRefusals(t *testing.T) {
 				t.Fatalf("expected %s refusal, got err=%v output=%s", test.mode, err, output)
 			}
 		})
+	}
+}
+
+func TestDeclaredCorpusCountsARepeatedInputOnce(t *testing.T) {
+	root := t.TempDir()
+	examples := filepath.Join(root, "resources", "examples")
+	if err := os.MkdirAll(examples, 0755); err != nil {
+		t.Fatal(err)
+	}
+	pair := "```carve\nsame\n```\n```html\n<p>same</p>\n```\n"
+	source := "::: compare\n" + pair + pair + ":::\n::: compare crlf\n" + pair + ":::\n"
+	for i, page := range specExamplePages {
+		content := ""
+		if i == 0 {
+			content = source
+		}
+		if err := os.WriteFile(filepath.Join(examples, page), []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := declaredCorpusSize(t, filepath.Join(root, "tests", "corpus")); got != 2 {
+		t.Fatalf("got %d pairs, want 2", got)
 	}
 }
