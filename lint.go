@@ -60,6 +60,10 @@ type LintOptions struct {
 	// the embedded engine resolves fragment links that the core rules report
 	// as broken.
 	Bundle bool
+	// CaptionHints also reports a caption-looking paragraph next to a table
+	// or image that should be a `^` caption line (--caption-hints,
+	// rule caption-looking-paragraph). Off by default, as in the engine.
+	CaptionHints bool
 	// Include, when set, expands include directives under Include.Root and
 	// lints every included Carve file too, plus the directives that stay
 	// literal (include-unresolved, include-cycle, ...). Those findings carry
@@ -106,6 +110,9 @@ func LintWithOptionsContext(ctx context.Context, source string, opts LintOptions
 	args := []string{"carve", "lint"}
 	if opts.Bundle {
 		args = append(args, "--extensions")
+	}
+	if opts.CaptionHints {
+		args = append(args, "--caption-hints")
 	}
 	for _, key := range opts.Extensions {
 		args = append(args, "--extension", key)

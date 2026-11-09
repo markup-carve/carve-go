@@ -5,6 +5,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -53,6 +55,36 @@ import (
 // them. Order is irrelevant to a count; the list is the generator's.
 var specExamplePages = []string{"core.md", "extensions.md", "edge-cases.md"}
 
+// specExamplePaths lists the page files in examplesDir. Since
+// markup-carve/carve#4132 the edge cases are one file per section under
+// edge-cases/ (scripts/lib/example-sections.mjs); an older spec checkout still
+// has the single edge-cases.md.
+func specExamplePaths(t *testing.T, examplesDir string) []string {
+	t.Helper()
+	paths := []string{}
+	for _, page := range specExamplePages {
+		sectionDir := filepath.Join(examplesDir, strings.TrimSuffix(page, ".md"))
+		entries, err := os.ReadDir(sectionDir)
+		if err != nil {
+			paths = append(paths, filepath.Join(examplesDir, page))
+			continue
+		}
+		sections := []string{}
+		for _, entry := range entries {
+			name := entry.Name()
+			if !entry.IsDir() && strings.HasSuffix(name, ".md") && name != "README.md" {
+				sections = append(sections, filepath.Join(sectionDir, name))
+			}
+		}
+		if len(sections) == 0 {
+			t.Fatalf("no section files in %s", sectionDir)
+		}
+		sort.Strings(sections)
+		paths = append(paths, sections...)
+	}
+	return paths
+}
+
 // Mirrors generate-corpus.mjs: `::: compare`, or a longer colon run, with
 // optional modifiers such as `::: compare no-render`.
 var compareOpenLine = regexp.MustCompile(`^:{3,}\s+compare(\s+\S.*)?$`)
@@ -64,13 +96,15 @@ var compareMarkerRun = regexp.MustCompile(`^:{3,}`)
 // <spec>/tests/corpus.
 //
 // Count Carve and HTML fences independently of generated files. Each block
-// must contain equal, nonzero counts; literal fenced content is ignored.
+// must contain equal, nonzero counts; literal fenced content is ignored. Pairs
+// whose Carve input is identical count once: the generator writes one fixture
+// per input (markup-carve/carve#5244).
 func declaredCorpusSize(t *testing.T, corpusDir string) int {
 	t.Helper()
 	examplesDir := filepath.Join(corpusDir, "..", "..", "resources", "examples")
 	declared := 0
-	for _, page := range specExamplePages {
-		path := filepath.Join(examplesDir, page)
+	inputs := map[string]bool{}
+	for _, path := range specExamplePaths(t, examplesDir) {
 		blob, err := os.ReadFile(path)
 		if err != nil {
 			// Not a soft skip. Without this file there is no independent
@@ -81,11 +115,20 @@ func declaredCorpusSize(t *testing.T, corpusDir string) int {
 				"if the spec moved them, this helper has to move with them", path, err)
 		}
 		marker, fence := "", ""
+		var modifiers []string
+		var body []string
+		inCarve := false
 		carveCount, htmlCount := 0, 0
 		for _, line := range strings.Split(string(blob), "\n") {
 			if fence != "" {
 				if strings.HasPrefix(line, fence) && strings.TrimSpace(line[len(fence):]) == "" {
 					fence = ""
+					if inCarve {
+						inputs[fixtureInput(strings.Join(body, "\n"), modifiers)] = true
+						inCarve = false
+					}
+				} else if inCarve {
+					body = append(body, line)
 				}
 				continue
 			}
@@ -96,6 +139,7 @@ func declaredCorpusSize(t *testing.T, corpusDir string) int {
 					switch strings.TrimSpace(line[ticks:]) {
 					case "carve":
 						carveCount++
+						inCarve, body = true, nil
 					case "html":
 						htmlCount++
 					}
@@ -115,6 +159,7 @@ func declaredCorpusSize(t *testing.T, corpusDir string) int {
 			}
 			if compareOpenLine.MatchString(trimmed) {
 				marker = compareMarkerRun.FindString(trimmed)
+				modifiers = strings.Fields(trimmed)[2:]
 				carveCount, htmlCount = 0, 0
 			}
 		}
@@ -126,7 +171,29 @@ func declaredCorpusSize(t *testing.T, corpusDir string) int {
 		t.Fatalf("the corpus source pages under %s declare no ::: compare blocks at all; "+
 			"this is a wiring problem, not a corpus of size zero", examplesDir)
 	}
-	return declared
+	return len(inputs)
+}
+
+// fixtureInput is the fixture the generator writes for one pair, after its
+// applyModifiers.
+func fixtureInput(carve string, modifiers []string) string {
+	out := carve + "\n"
+	if slices.Contains(modifiers, "no-final-newline") {
+		out = strings.TrimSuffix(out, "\n")
+	}
+	if slices.Contains(modifiers, "crlf") {
+		out = strings.ReplaceAll(out, "\n", "\r\n")
+	}
+	if slices.Contains(modifiers, "cr") {
+		out = strings.ReplaceAll(out, "\n", "\r")
+	}
+	if slices.Contains(modifiers, "bom") {
+		out = "\ufeff" + out
+	}
+	if slices.Contains(modifiers, "nul") {
+		out = strings.ReplaceAll(out, "\u2400", "\x00")
+	}
+	return out
 }
 
 // requireWholeCorpus is the only place this package decides whether a corpus
@@ -142,7 +209,7 @@ func requireWholeCorpus(t *testing.T, corpusDir string, got int, what string) {
 	declared := declaredCorpusSize(t, corpusDir)
 	if got != declared {
 		t.Fatalf("%s: %d, but the spec's example pages declare %d. Every ::: compare block in "+
-			"resources/examples/{core,extensions,edge-cases}.md yields one corpus pair per carve fence, so a "+
+			"resources/examples/{core,extensions}.md and edge-cases/ yields one corpus pair per carve fence, so a "+
 			"difference "+
 			"means the corpus at %s is not the one those pages describe - a truncated or stale "+
 			"checkout, a wrong CARVE_SPEC_CORPUS, or a corpus that needs regenerating "+
@@ -254,5 +321,27 @@ func TestCorpusPopulationRefusals(t *testing.T) {
 				t.Fatalf("expected %s refusal, got err=%v output=%s", test.mode, err, output)
 			}
 		})
+	}
+}
+
+func TestDeclaredCorpusCountsARepeatedInputOnce(t *testing.T) {
+	root := t.TempDir()
+	examples := filepath.Join(root, "resources", "examples")
+	if err := os.MkdirAll(examples, 0755); err != nil {
+		t.Fatal(err)
+	}
+	pair := "```carve\nsame\n```\n```html\n<p>same</p>\n```\n"
+	source := "::: compare\n" + pair + pair + ":::\n::: compare crlf\n" + pair + ":::\n"
+	for i, page := range specExamplePages {
+		content := ""
+		if i == 0 {
+			content = source
+		}
+		if err := os.WriteFile(filepath.Join(examples, page), []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := declaredCorpusSize(t, filepath.Join(root, "tests", "corpus")); got != 2 {
+		t.Fatalf("got %d pairs, want 2", got)
 	}
 }

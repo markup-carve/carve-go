@@ -194,8 +194,9 @@ type LintSite struct {
 
 type LintOptions struct {
 	Extensions []string // one --extension KEY each; `citations` is the only key the pass takes
-	Bundle     bool     // --extensions
-	Include    *Include // lint included files too (--include-root)
+	Bundle       bool     // --extensions
+	CaptionHints bool     // also report caption-looking-paragraph (--caption-hints)
+	Include      *Include // lint included files too (--include-root)
 }
 ```
 
@@ -233,6 +234,19 @@ findings, err := carve.LintWithOptions(source, carve.LintOptions{
 The engine CLI reports no source offsets for a finding, so `LintFinding` has no
 `Start`/`End` pair, unlike carve-rb's `Carve.lint`. The include budgets are the
 engine defaults listed under [File inclusion](#file-inclusion).
+
+### Decision trace
+
+`DecisionTrace` returns what `carve trace` prints: JSON lines, a header naming
+the trace format version, then one record per source line saying which block
+the ownership walk gave it. Use it to debug why a line landed in a list, quote
+or paragraph; the record fields follow the engine's trace format, not this
+package's API.
+
+```go
+func DecisionTrace(source string) (string, error)
+func DecisionTraceContext(ctx context.Context, source string) (string, error)
+```
 
 ### Render losses
 
