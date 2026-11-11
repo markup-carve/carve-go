@@ -9,6 +9,28 @@ line of Go changing, so rebuilds get an entry of their own.
 
 ## [Unreleased]
 
+## [0.1.11] - 2026-11-12
+
+Rendering, import and lint follow the published carve-rs 0.1.14 engine and the carve 0.1.14 spec.
+
+### Breaking
+
+- `FromHTML` no longer reads `data-djot-*` roundtrip carriers, `data-djot-src` included; only `data-carve-*` is read (markup-carve/carve#5735).
+- Lint suppression directives accept only `heading-level-skip`; `a11y/heading-jump` is no longer an alias for it (markup-carve/carve#5735).
+- Lint reports a refused own-line `+` after a block as `refused-continuation-marker`; a refused first-block `+` keeps `continuation-marker-refused` (markup-carve/carve-rs#4201).
+- `ToMarkdown` returns an error when a roundtrip carrier has no Markdown spelling, instead of failing inside the engine (markup-carve/carve-rs#4252).
+
+### Fixes
+
+- Block ownership, `+` attachment, comment spans, lazy lines, tables, captions, includes and inline pairing follow the 0.1.14 spec rulings (#109, #110, #112).
+- `FromMarkdown` drops a destination whose scheme the renderer denies and reports where, and keeps footnote-used definitions (#112).
+
+### Improvements
+
+- The embedded engine is carve-rs 0.1.14: braced table cell alignment (`|={>}`), `***` and native `|=` headers in `ToCarve`, and first-line `---` frontmatter that runs to the end of the document without a closer (#109, #110, #112).
+
+**Full Changelog**: https://github.com/markup-carve/carve-go/compare/v0.1.10...v0.1.11
+
 ## [0.1.10] - 2026-10-25
 
 Task lists carry progress and blocked states through the Go binding. Rendering and import follow the 0.1.13 engine fixes.
@@ -287,7 +309,8 @@ First release. `ToHTML` and the AST surface over a carve-rs engine embedded as
 WebAssembly and driven with wazero, so the module has no cgo and no external
 process.
 
-[Unreleased]: https://github.com/markup-carve/carve-go/compare/v0.1.10...HEAD
+[Unreleased]: https://github.com/markup-carve/carve-go/compare/v0.1.11...HEAD
+[0.1.11]: https://github.com/markup-carve/carve-go/compare/v0.1.10...v0.1.11
 [0.1.10]: https://github.com/markup-carve/carve-go/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/markup-carve/carve-go/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/markup-carve/carve-go/compare/v0.1.7...v0.1.8
