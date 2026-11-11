@@ -1,0 +1,17 @@
+[
+  {
+    "name": "1063-a-block-shaped-line-inside-a-comment-run-keeps-the-item-tight",
+    "reason": "carve#5844: spec pin behavior pending its separate engine port",
+    "html": "<ul>\n  <li><p>p</p>\n    <p>{% a</p>\n    <ul>\n      <li>m\nz %}</li>\n    </ul>\n  </li>\n</ul>"
+  },
+  {
+    "name": "1063-a-block-shaped-line-inside-a-comment-run-keeps-the-item-tight-2",
+    "reason": "carve#5844: spec pin behavior pending its separate engine port",
+    "html": "<ol>\n  <li><p>p</p>\n    <p>{% a</p>\n    <h1 id=\"m\">m</h1>\n    <p>%}</p>\n  </li>\n</ol>"
+  },
+  {
+    "name": "1063-a-block-shaped-line-inside-a-comment-run-keeps-the-item-tight-3",
+    "reason": "carve#5844: spec pin behavior pending its separate engine port",
+    "html": "<blockquote>\n  <ul>\n    <li><p>p</p>\n      <p>{% a</p>\n      <hr>\n      <p>z %}</p>\n    </li>\n  </ul>\n</blockquote>"
+  }
+]
