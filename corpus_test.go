@@ -35,7 +35,7 @@ func TestSpecCorpus(t *testing.T) {
 
 	behind := corpusBehind(t)
 	var mismatches []string
-	total := 0
+	total, declaredBehind := 0, 0
 	for _, e := range entries {
 		name := e.Name()
 		if !strings.HasSuffix(name, ".crv") {
@@ -61,6 +61,7 @@ func TestSpecCorpus(t *testing.T) {
 		got, wantHTML := strings.TrimRight(got, "\n"), strings.TrimRight(string(want), "\n")
 		if declared, ok := behind[base]; ok {
 			delete(behind, base)
+			declaredBehind++
 			switch {
 			case declared == wantHTML:
 				mismatches = append(mismatches, base+": declared behind but now matches the corpus; drop it from testdata/corpus-behind.json")
@@ -96,7 +97,7 @@ func TestSpecCorpus(t *testing.T) {
 		}
 		t.Fatalf("%d of %d corpus cases diverge from the spec; the embedded wasm probably needs a rebuild (./build-wasm.sh)", len(mismatches), total)
 	}
-	t.Logf("%d corpus cases byte-identical", total)
+	t.Logf("%d corpus cases byte-identical, %d declared behind as the engine declares them", total-declaredBehind, declaredBehind)
 }
 
 // corpusBehind reads the pairs the embedded engine declares behind the corpus
