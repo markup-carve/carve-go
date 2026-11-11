@@ -1,6 +1,7 @@
 package carve
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"sort"
@@ -32,8 +33,9 @@ func TestSpecCorpus(t *testing.T) {
 		t.Fatalf("CARVE_SPEC_CORPUS=%s is not readable: %v", dir, err)
 	}
 
+	behind := corpusBehind(t)
 	var mismatches []string
-	total := 0
+	total, declaredBehind := 0, 0
 	for _, e := range entries {
 		name := e.Name()
 		if !strings.HasSuffix(name, ".crv") {
@@ -56,7 +58,19 @@ func TestSpecCorpus(t *testing.T) {
 			mismatches = append(mismatches, base+": render error: "+err.Error())
 			continue
 		}
-		if strings.TrimRight(got, "\n") != strings.TrimRight(string(want), "\n") {
+		got, wantHTML := strings.TrimRight(got, "\n"), strings.TrimRight(string(want), "\n")
+		if declared, ok := behind[base]; ok {
+			delete(behind, base)
+			declaredBehind++
+			switch {
+			case declared == wantHTML:
+				mismatches = append(mismatches, base+": declared behind but now matches the corpus; drop it from testdata/corpus-behind.json")
+			case got != declared:
+				mismatches = append(mismatches, base+": moved from the HTML testdata/corpus-behind.json declares")
+			}
+			continue
+		}
+		if got != wantHTML {
 			mismatches = append(mismatches, base)
 		}
 	}
@@ -68,6 +82,9 @@ func TestSpecCorpus(t *testing.T) {
 	// replaced it and why the reference is the spec's example pages rather than
 	// a number recorded here.
 	requireWholeCorpus(t, dir, total, "corpus pairs compared")
+	for name := range behind {
+		mismatches = append(mismatches, name+": declared behind but not in this corpus")
+	}
 
 	sort.Strings(mismatches)
 	if len(mismatches) > 0 {
@@ -80,5 +97,28 @@ func TestSpecCorpus(t *testing.T) {
 		}
 		t.Fatalf("%d of %d corpus cases diverge from the spec; the embedded wasm probably needs a rebuild (./build-wasm.sh)", len(mismatches), total)
 	}
-	t.Logf("%d corpus cases byte-identical", total)
+	t.Logf("%d corpus cases byte-identical, %d declared behind as the engine declares them", total-declaredBehind, declaredBehind)
+}
+
+// corpusBehind reads the pairs the embedded engine declares behind the corpus
+// (BEHIND_ON_PAIR in carve-rs tests/corpus.rs), with the HTML it renders today.
+// An entry fails both ways, so an upstream fix forces it out here too.
+func corpusBehind(t *testing.T) map[string]string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("testdata", "corpus-behind.json"))
+	if err != nil {
+		t.Fatalf("testdata/corpus-behind.json: %v", err)
+	}
+	var entries []struct {
+		Name string `json:"name"`
+		HTML string `json:"html"`
+	}
+	if err := json.Unmarshal(raw, &entries); err != nil {
+		t.Fatalf("testdata/corpus-behind.json: %v", err)
+	}
+	behind := make(map[string]string, len(entries))
+	for _, entry := range entries {
+		behind[entry.Name] = entry.HTML
+	}
+	return behind
 }
