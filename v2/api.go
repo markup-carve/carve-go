@@ -232,14 +232,15 @@ func ParseASTContext(ctx context.Context, source string) (json.RawMessage, error
 // Write sends a resolved tree to the named 0.2 writer registry target.
 // The current WASI engine has only the html writer; other target names remain stable.
 func Write(ctx context.Context, source string, target string, options Options) (string, error) {
+	if target == "html" {
+		return renderHTML(ctx, source, options)
+	}
 	opts, err := options.data()
 	if err != nil {
 		return "", err
 	}
-	for key := range opts {
-		if key != "headingIds" {
-			return "", errors.New("carve2: write does not read render options; render HTML to apply them")
-		}
+	if len(opts) != 0 {
+		return "", errors.New("carve2: this writer does not read render options")
 	}
 	parsed, err := Parse(ctx, source, options)
 	if err != nil {

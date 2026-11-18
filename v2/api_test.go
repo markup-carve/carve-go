@@ -109,11 +109,13 @@ func TestWriterRegistryHTMLAndRawCall(t *testing.T) {
 	if err != nil || writtenTree.Output != "<p>Hi</p>" {
 		t.Fatalf("write tree: %+v (%v)", writtenTree, err)
 	}
-	if _, err := Write(context.Background(), "# Title", "html", Options{HeadingIDs: "ascii"}); err != nil {
-		t.Fatalf("write refused a parse option: %v", err)
+	heading, err := Write(context.Background(), "# Title", "html", Options{HeadingIDs: "off"})
+	if err != nil || strings.Contains(heading, "id=") {
+		t.Fatalf("write ignored heading IDs option: %q (%v)", heading, err)
 	}
-	if _, err := Write(context.Background(), "Hi", "html", Options{RawHTML: true}); err == nil {
-		t.Fatal("write silently ignored render options")
+	raw, err := Write(context.Background(), "```=html\n<b>raw</b>\n```", "html", Options{RawHTML: true})
+	if err != nil || raw != "<b>raw</b>" {
+		t.Fatalf("write ignored raw HTML option: %q (%v)", raw, err)
 	}
 }
 
