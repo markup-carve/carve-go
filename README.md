@@ -5,6 +5,10 @@ with the reference [carve-rs](https://github.com/markup-carve/carve-rs) engine.
 It embeds the engine as `wasm32-wasip1` and runs it with wazero, so callers need
 neither cgo nor a JavaScript host.
 
+## Carve 0.2 preview
+
+The 0.2 bridge is in the [v2 package](v2/README.md). It embeds a pinned carve-rs `next2` WASI build and uses the public JSON call boundary. The root package remains the 0.1 binding. No 0.2 release has been published.
+
 ## Install
 
 ```bash

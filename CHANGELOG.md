@@ -9,6 +9,11 @@ line of Go changing, so rebuilds get an entry of their own.
 
 ## [Unreleased]
 
+### 0.2 preview
+
+- Add a `v2` Go package backed by the pinned carve-rs `next2` WASI JSON boundary, with HTML, tree, diagnostics, lint, includes, and writer calls. The root package retains the 0.1 contract.
+- Keep writer and importer entry points with explicit unavailable errors until the 0.2 engine implements them.
+
 ## [0.1.11] - 2026-11-12
 
 Rendering, import and lint follow the published carve-rs 0.1.14 engine and the carve 0.1.14 spec.
