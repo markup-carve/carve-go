@@ -5,7 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 )
+
+func unavailable(err error) bool {
+	var engineErr *EngineError
+	return errors.As(err, &engineErr) && engineErr.Category == "usage" &&
+		strings.Contains(engineErr.Message, "not available in this engine yet")
+}
 
 // Options uses the 0.2 option names. The zero value keeps raw HTML disabled.
 type Options struct {
@@ -151,7 +158,7 @@ func WriteTree(ctx context.Context, tree json.RawMessage, target string, options
 	}
 	var result WriteResult
 	err := Call(ctx, map[string]any{"call": "writeWithDiagnostics", "tree": tree, "target": target, "options": opts}, &result)
-	if err != nil && target != "html" {
+	if err != nil && target != "html" && unavailable(err) {
 		return WriteResult{}, fmt.Errorf("carve2: %s writer not available yet: %w", target, err)
 	}
 	return result, err
@@ -261,17 +268,17 @@ func Format(ctx context.Context, source string, alignTables bool) (string, error
 		Source string `json:"source"`
 	}
 	err := Call(ctx, map[string]any{"call": "format", "source": source, "options": opts}, &result)
-	if err != nil {
+	if unavailable(err) {
 		return "", fmt.Errorf("carve2: carve writer not available yet: %w", err)
 	}
-	return result.Source, nil
+	return result.Source, err
 }
 
 // ImportDocument keeps the 0.2 importer entry point until the Rust engine provides it.
 func ImportDocument(ctx context.Context, source, format string) (json.RawMessage, error) {
 	var result json.RawMessage
 	err := Call(ctx, map[string]any{"call": "importDocument", "source": source, "from": format}, &result)
-	if err != nil {
+	if unavailable(err) {
 		return nil, fmt.Errorf("carve2: %s importer not available yet: %w", format, err)
 	}
 	return result, err

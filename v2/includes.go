@@ -153,8 +153,11 @@ func RenderWithIncludesContext(ctx context.Context, source string, format Output
 		Diagnostics []Diagnostic `json:"diagnostics"`
 	}
 	err = Call(ctx, map[string]any{"call": "write", "tree": parsed.Tree, "target": string(format)}, &written)
-	if err != nil {
+	if unavailable(err) {
 		return IncludeResult{}, fmt.Errorf("carve2: %s writer not available yet: %w", format, err)
+	}
+	if err != nil {
+		return IncludeResult{}, err
 	}
 	all := append(parsed.Diagnostics, written.Diagnostics...)
 	return IncludeResult{Output: written.Output, Diagnostics: all, SuppressedDiagnostics: parsed.SuppressedDiagnostics, Dependencies: deps, Warnings: includeWarnings(all, inc.Root), SuppressedWarnings: parsed.SuppressedDiagnostics}, nil

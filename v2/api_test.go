@@ -219,6 +219,10 @@ func TestWriterAndImporterGaps(t *testing.T) {
 	if _, err := FromMarkdown("Hi"); err == nil {
 		t.Fatal("Markdown importer unexpectedly available")
 	}
+	_, err := WriteTree(context.Background(), json.RawMessage(`{}`), "markdown", WriteOptions{})
+	if err == nil || strings.Contains(err.Error(), "writer not available yet") {
+		t.Fatalf("invalid tree was hidden as a missing writer: %v", err)
+	}
 }
 
 func TestMarkdownWriterPending(t *testing.T) {
