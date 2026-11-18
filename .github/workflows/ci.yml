@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, next2]
   pull_request:
-    branches: [main]
+    branches: [main, next2]
   # For corpus-drift. That job measures the embedded engine against spec MAIN,
   # which moves without a single commit here, so a push-triggered run alone
   # would report the state of the day someone last touched this repo. This
@@ -22,6 +22,25 @@ on:
 # default, roughly 900x the median job in this org, so a hung step burns hours
 # of runner time before anything stops it.
 jobs:
+  v2-engine-pin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+        with:
+          repository: markup-carve/carve-rs
+          ref: next2
+          path: carve-rs-next2
+          fetch-depth: 0
+      - name: Check pinned 0.2 WASI artifact and source commit
+        run: |
+          (cd v2/internal/wasm && sha256sum -c carve2.wasm.sha256)
+          rev="$(cat v2/internal/wasm/REV)"
+          [[ "$rev" =~ ^[0-9a-f]{40}$ ]]
+          git -C carve-rs-next2 cat-file -e "$rev^{commit}"
+          git -C carve-rs-next2 merge-base --is-ancestor "$rev" HEAD
+
   build-test:
     runs-on: ubuntu-latest
     timeout-minutes: 20
