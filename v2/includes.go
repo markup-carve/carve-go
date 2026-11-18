@@ -20,10 +20,19 @@ type Include struct {
 // Dependency records a target named by an include. Read is true when the
 // resolver opened it, including when later processing refused its content.
 type Dependency struct {
-	Path string `json:"path"`
-	From string `json:"from,omitempty"`
-	File string `json:"file,omitempty"`
-	Read bool   `json:"read"`
+	Path     string `json:"path"`
+	From     string `json:"from,omitempty"`
+	File     string `json:"file,omitempty"`
+	Read     bool   `json:"read"`
+	Resolved bool   `json:"-"`
+	HostPath string `json:"-"`
+}
+
+type IncludeDependency = Dependency
+type IncludeWarning struct {
+	Rule    string
+	Message string
+	File    string
 }
 
 func IncludeDependencies(ctx context.Context, tree json.RawMessage, file string) ([]Dependency, error) {
@@ -39,6 +48,33 @@ type IncludeResult struct {
 	Diagnostics           []Diagnostic
 	SuppressedDiagnostics int
 	Dependencies          []Dependency
+	Warnings              []IncludeWarning
+	SuppressedWarnings    int
+}
+
+func includeWarnings(entries []Diagnostic, root string) []IncludeWarning {
+	warnings := []IncludeWarning{}
+	for _, entry := range entries {
+		if !strings.HasPrefix(entry.Code, "include-") {
+			continue
+		}
+		file := entry.File
+		if file != "" {
+			file = filepath.Join(root, filepath.FromSlash(file))
+		}
+		warnings = append(warnings, IncludeWarning{Rule: entry.Code, Message: entry.Message, File: file})
+	}
+	return warnings
+}
+
+func hostDependencies(entries []Dependency, root string) []Dependency {
+	for i := range entries {
+		entries[i].Resolved = entries[i].Read
+		if entries[i].Read && entries[i].File != "" {
+			entries[i].HostPath = filepath.Join(root, filepath.FromSlash(entries[i].File))
+		}
+	}
+	return entries
 }
 
 // os.Root confines symlink traversal as well as lexical paths. A plain
@@ -95,6 +131,7 @@ func RenderWithIncludesContext(ctx context.Context, source string, format Output
 	if err != nil {
 		return IncludeResult{}, err
 	}
+	deps = hostDependencies(deps, inc.Root)
 	renderOpts, err := opts.data()
 	if err != nil {
 		return IncludeResult{}, err
@@ -105,7 +142,8 @@ func RenderWithIncludesContext(ctx context.Context, source string, format Output
 		if err != nil {
 			return IncludeResult{}, err
 		}
-		return IncludeResult{Output: rendered.HTML, Diagnostics: append(parsed.Diagnostics, rendered.Diagnostics...), SuppressedDiagnostics: parsed.SuppressedDiagnostics + rendered.SuppressedDiagnostics, Dependencies: deps}, nil
+		all := append(parsed.Diagnostics, rendered.Diagnostics...)
+		return IncludeResult{Output: rendered.HTML, Diagnostics: all, SuppressedDiagnostics: parsed.SuppressedDiagnostics + rendered.SuppressedDiagnostics, Dependencies: deps, Warnings: includeWarnings(all, inc.Root), SuppressedWarnings: parsed.SuppressedDiagnostics}, nil
 	}
 	if format == OutputCarve {
 		return IncludeResult{}, errors.New("carve2: carve writer not available yet for included trees")
@@ -118,5 +156,6 @@ func RenderWithIncludesContext(ctx context.Context, source string, format Output
 	if err != nil {
 		return IncludeResult{}, fmt.Errorf("carve2: %s writer not available yet: %w", format, err)
 	}
-	return IncludeResult{Output: written.Output, Diagnostics: append(parsed.Diagnostics, written.Diagnostics...), SuppressedDiagnostics: parsed.SuppressedDiagnostics, Dependencies: deps}, nil
+	all := append(parsed.Diagnostics, written.Diagnostics...)
+	return IncludeResult{Output: written.Output, Diagnostics: all, SuppressedDiagnostics: parsed.SuppressedDiagnostics, Dependencies: deps, Warnings: includeWarnings(all, inc.Root), SuppressedWarnings: parsed.SuppressedDiagnostics}, nil
 }

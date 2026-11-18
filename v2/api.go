@@ -229,8 +229,10 @@ func Write(ctx context.Context, source string, target string, options Options) (
 	if err != nil {
 		return "", err
 	}
-	if len(opts) != 0 {
-		return "", errors.New("carve2: write does not read render options; render HTML to apply them")
+	for key := range opts {
+		if key != "headingIds" {
+			return "", errors.New("carve2: write does not read render options; render HTML to apply them")
+		}
 	}
 	parsed, err := Parse(ctx, source, options)
 	if err != nil {

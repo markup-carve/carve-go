@@ -109,6 +109,9 @@ func TestWriterRegistryHTMLAndRawCall(t *testing.T) {
 	if err != nil || writtenTree.Output != "<p>Hi</p>" {
 		t.Fatalf("write tree: %+v (%v)", writtenTree, err)
 	}
+	if _, err := Write(context.Background(), "# Title", "html", Options{HeadingIDs: "ascii"}); err != nil {
+		t.Fatalf("write refused a parse option: %v", err)
+	}
 	if _, err := Write(context.Background(), "Hi", "html", Options{RawHTML: true}); err == nil {
 		t.Fatal("write silently ignored render options")
 	}
