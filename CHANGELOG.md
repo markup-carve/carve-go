@@ -12,7 +12,11 @@ line of Go changing, so rebuilds get an entry of their own.
 ### 0.2 preview
 
 - Add a `v2` Go package backed by the pinned carve-rs `next2` WASI JSON boundary, with HTML, tree, diagnostics, lint, includes, and writer calls. The root package retains the 0.1 contract.
-- Keep writer and importer entry points with explicit unavailable errors until the 0.2 engine implements them.
+- Keep the Markdown, plain-text and ANSI writer entry points with explicit unavailable errors until the 0.2 engine implements them.
+- Embed the renamed engine: the `carve` WASI command (`v2/internal/wasm/carve.wasm`) from carve-rs `next2` `7fb7c249`, where `carve2.wasm` used to be. The `v2` Go package is named `carve`.
+- `RenderWithIncludes` and `Lint` with an `Include` expand includes in the mounted root (#115).
+- `Options.Extensions` and `Options.Renderers` select the engine's standard extensions; `StandardExtensions` lists them (#116).
+- `ToCarve`, `Format` and `FromHTML` work against the engine's canonical writer and HTML importer.
 
 ## [0.1.11] - 2026-11-12
 

@@ -35,7 +35,7 @@ jobs:
           fetch-depth: 0
       - name: Check pinned 0.2 WASI artifact and source commit
         run: |
-          (cd v2/internal/wasm && sha256sum -c carve2.wasm.sha256)
+          (cd v2/internal/wasm && sha256sum -c carve.wasm.sha256)
           rev="$(cat v2/internal/wasm/REV)"
           [[ "$rev" =~ ^[0-9a-f]{40}$ ]]
           git -C carve-rs-next2 cat-file -e "$rev^{commit}"

@@ -1,4 +1,4 @@
-package carve2
+package carve
 
 import (
 	"context"
@@ -25,9 +25,16 @@ type Options struct {
 	StrictLosses bool
 	Roundtrip    bool
 	SourceLines  bool
-	// Extensions require host code and are not accepted by the WASI JSON boundary yet.
+	// Extensions names standard extensions of the engine (C2-X-039), see
+	// StandardExtensions. Host extensions take host code, which the WASI JSON
+	// boundary has no form for (C2-T-010).
 	Extensions []string
+	// Renderers maps a standard extension to "standard", its standard renderer.
+	Renderers map[string]string
 }
+
+// StandardExtensions lists the extensions Options.Extensions can name.
+var StandardExtensions = []string{"carve.cite", "carve.imgFence.image", "carve.imgFence.img", "carve.tabs", "carve.wiki"}
 
 type URLPolicy struct {
 	Allow []string
@@ -66,7 +73,7 @@ func (o Options) data() (map[string]any, error) {
 	}
 	if o.URLPolicy != nil {
 		if o.URLPolicy.Allow != nil && o.URLPolicy.Deny != nil {
-			return nil, errors.New("carve2: URLPolicy must select allow or deny")
+			return nil, errors.New("carve: URLPolicy must select allow or deny")
 		}
 		if o.URLPolicy.Allow != nil {
 			m["urlPolicy"] = map[string]any{"allow": o.URLPolicy.Allow}
@@ -97,7 +104,10 @@ func (o Options) data() (map[string]any, error) {
 		m["sourceLines"] = true
 	}
 	if len(o.Extensions) > 0 {
-		return nil, errors.New("carve2: extension registration is not available yet through the WASI JSON boundary")
+		m["extensions"] = o.Extensions
+	}
+	if len(o.Renderers) > 0 {
+		m["renderers"] = o.Renderers
 	}
 	return m, nil
 }
@@ -159,7 +169,7 @@ func WriteTree(ctx context.Context, tree json.RawMessage, target string, options
 	var result WriteResult
 	err := Call(ctx, map[string]any{"call": "writeWithDiagnostics", "tree": tree, "target": target, "options": opts}, &result)
 	if err != nil && target != "html" && unavailable(err) {
-		return WriteResult{}, fmt.Errorf("carve2: %s writer not available yet: %w", target, err)
+		return WriteResult{}, fmt.Errorf("carve: %s writer not available yet: %w", target, err)
 	}
 	return result, err
 }
@@ -240,7 +250,7 @@ func Write(ctx context.Context, source string, target string, options Options) (
 		return "", err
 	}
 	if len(opts) != 0 {
-		return "", errors.New("carve2: this writer does not read render options")
+		return "", errors.New("carve: this writer does not read render options")
 	}
 	parsed, err := Parse(ctx, source, options)
 	if err != nil {
@@ -270,17 +280,17 @@ func Format(ctx context.Context, source string, alignTables bool) (string, error
 	}
 	err := Call(ctx, map[string]any{"call": "format", "source": source, "options": opts}, &result)
 	if unavailable(err) {
-		return "", fmt.Errorf("carve2: carve writer not available yet: %w", err)
+		return "", fmt.Errorf("carve: carve writer not available yet: %w", err)
 	}
 	return result.Source, err
 }
 
-// ImportDocument keeps the 0.2 importer entry point until the Rust engine provides it.
+// ImportDocument imports a foreign document; the engine reads "html".
 func ImportDocument(ctx context.Context, source, format string) (json.RawMessage, error) {
 	var result json.RawMessage
 	err := Call(ctx, map[string]any{"call": "importDocument", "source": source, "from": format}, &result)
 	if unavailable(err) {
-		return nil, fmt.Errorf("carve2: %s importer not available yet: %w", format, err)
+		return nil, fmt.Errorf("carve: %s importer not available yet: %w", format, err)
 	}
 	return result, err
 }
@@ -288,5 +298,5 @@ func FromHTML(source string) (json.RawMessage, error) {
 	return ImportDocument(context.Background(), source, "html")
 }
 func FromMarkdown(source string) (json.RawMessage, error) {
-	return nil, errors.New("carve2: Markdown importer not available in the 0.2 engine")
+	return nil, errors.New("carve: Markdown importer not available in the 0.2 engine")
 }

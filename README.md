@@ -7,7 +7,7 @@ neither cgo nor a JavaScript host.
 
 ## Carve 0.2 preview
 
-The 0.2 bridge is in the [v2 package](v2/README.md). It embeds a pinned carve-rs `next2` WASI build and uses the public JSON call boundary. The root package remains the 0.1 binding. No 0.2 release has been published.
+The 0.2 bridge is in the [v2 package](v2/README.md). It embeds a pinned carve-rs `next2` WASI build of the `carve` command (`carve.wasm`) and uses the public JSON call boundary. The root package remains the 0.1 binding. No 0.2 release has been published.
 
 ## Install
 
