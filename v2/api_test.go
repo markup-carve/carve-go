@@ -1,4 +1,4 @@
-package carve2
+package carve
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -130,13 +131,34 @@ func TestLintAndValidation(t *testing.T) {
 		t.Fatalf("rule error: %v", err)
 	}
 	_, err = ToHTMLOptions("Hi", Options{Extensions: []string{"spoiler"}})
-	if err == nil || !strings.Contains(err.Error(), "extension registration") {
-		t.Fatalf("extension gap: %v", err)
+	if !errors.As(err, &engineErr) || engineErr.Name != "CarveOptionError" {
+		t.Fatalf("unknown extension: %v", err)
+	}
+}
+
+func TestStandardExtensions(t *testing.T) {
+	html, err := ToHTMLOptions(":wiki[Page]", Options{Extensions: []string{"carve.wiki"}})
+	if err != nil || html != "<p>Page</p>" {
+		t.Fatalf("carve.wiki: %q (%v)", html, err)
+	}
+	source := "::: tabs\n::: tab {title=A}\nx\n:::\n:::\n"
+	html, err = ToHTMLOptions(source, Options{Extensions: []string{"carve.tabs"}, Renderers: map[string]string{"carve.tabs": "standard"}})
+	if err != nil || !strings.Contains(html, `class="tabs"`) {
+		t.Fatalf("carve.tabs: %q (%v)", html, err)
+	}
+	_, err = ToHTMLOptions(source, Options{Extensions: []string{"carve.tabs"}, Renderers: map[string]string{"carve.tabs": "host"}})
+	var engineErr *EngineError
+	if !errors.As(err, &engineErr) || !strings.Contains(engineErr.Message, "standard") {
+		t.Fatalf("host renderer: %v", err)
+	}
+	for _, name := range StandardExtensions {
+		if _, err := ToHTMLOptions("Hi", Options{Extensions: []string{name}}); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
 	}
 }
 
 func TestIncludesAndDependencies(t *testing.T) {
-	t.Skip("WASI include resolver not available yet in carve-rs 0.2")
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "part.crv"), []byte("*inside*"), 0600); err != nil {
 		t.Fatal(err)
@@ -149,20 +171,76 @@ func TestIncludesAndDependencies(t *testing.T) {
 	if !strings.Contains(result.Output, "<strong>inside</strong>") {
 		t.Fatalf("include HTML: %q", result.Output)
 	}
-	if len(result.Dependencies) != 1 || !result.Dependencies[0].Read {
+	if len(result.Dependencies) != 1 || !result.Dependencies[0].Read || result.Dependencies[0].HostPath != filepath.Join(root, "part.crv") {
 		t.Fatalf("dependencies: %#v", result.Dependencies)
+	}
+	missing, err := RenderWithIncludes("{{ missing.crv }}", OutputHTML, Options{}, inc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	codes := []string{}
+	for _, warning := range missing.Warnings {
+		codes = append(codes, warning.Rule)
+	}
+	if !slices.Contains(codes, "include-not-found") {
+		t.Fatalf("missing include warnings: %v", codes)
+	}
+	outside, err := RenderWithIncludes("{{ ../outside.crv }}", OutputHTML, Options{}, inc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.ContainsFunc(outside.Diagnostics, func(d Diagnostic) bool { return d.Code == "include-outside-root" }) {
+		t.Fatalf("outside include: %#v", outside.Diagnostics)
 	}
 }
 
-func TestWASIIncludeGapIsClear(t *testing.T) {
+func TestIncludeLint(t *testing.T) {
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "part.crv"), []byte("*inside*"), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "part.crv"), []byte("Text\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	inc := Include{Root: root, SourcePath: filepath.Join(root, "main.crv")}
-	_, err := RenderWithIncludes("{{ part.crv }}", OutputHTML, Options{}, inc)
-	if err == nil || !strings.Contains(err.Error(), "include resolver not available yet") {
-		t.Fatalf("include gap: %v", err)
+	entries, err := Lint(context.Background(), "{{ part.crv }}\n\n{{ missing.crv }}\n", LintOptions{Include: &inc})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.ContainsFunc(entries, func(d Diagnostic) bool { return d.Code == "include-not-found" }) {
+		t.Fatalf("include lint: %#v", entries)
+	}
+}
+
+func TestIncludeWithExtensions(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "part.crv"), []byte(":wiki[Page]"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	inc := Include{Root: root, SourcePath: filepath.Join(root, "main.crv")}
+	result, err := RenderWithIncludes("{{ part.crv }}", OutputHTML, Options{Extensions: []string{"carve.wiki"}}, inc)
+	if err == nil && result.Output == "<p>{{ part.crv }}</p>" {
+		t.Skip("carve-rs#4352: the extensions option turns include expansion off")
+	}
+	if err != nil || result.Output != "<p>Page</p>" {
+		t.Fatalf("include with extension: %q (%v)", result.Output, err)
+	}
+}
+
+func TestUnresolvedIncludeLossNamesItsFile(t *testing.T) {
+	root := t.TempDir()
+	inc := Include{Root: root, SourcePath: filepath.Join(root, "main.crv")}
+	result, err := RenderWithIncludes("{{ missing.crv }}", OutputHTML, Options{}, inc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range result.Diagnostics {
+		if d.Code != "include-unresolved" {
+			continue
+		}
+		if d.Message == `Include "" could not be resolved.` {
+			t.Skip("carve-rs#4351: include-unresolved names an empty path")
+		}
+		if d.Message != `Include "missing.crv" could not be resolved.` {
+			t.Fatalf("include-unresolved: %q", d.Message)
+		}
 	}
 }
 
@@ -202,7 +280,7 @@ func TestIncludeMountConfinesSymlinks(t *testing.T) {
 	}
 }
 
-func TestWriterAndImporterGaps(t *testing.T) {
+func TestWriterGaps(t *testing.T) {
 	if _, err := ToMarkdown("Hi"); err == nil || !strings.Contains(err.Error(), "writer") {
 		t.Fatalf("Markdown writer gap: %v", err)
 	}
@@ -211,12 +289,6 @@ func TestWriterAndImporterGaps(t *testing.T) {
 	}
 	if _, err := ToANSI("Hi"); err == nil || !strings.Contains(err.Error(), "writer") {
 		t.Fatalf("ANSI writer gap: %v", err)
-	}
-	if _, err := ToCarve("Hi"); err == nil || !strings.Contains(err.Error(), "writer") {
-		t.Fatalf("Carve writer gap: %v", err)
-	}
-	if _, err := FromHTML("<p>Hi</p>"); err == nil {
-		t.Fatal("HTML importer unexpectedly available")
 	}
 	if _, err := FromMarkdown("Hi"); err == nil {
 		t.Fatal("Markdown importer unexpectedly available")
@@ -227,14 +299,42 @@ func TestWriterAndImporterGaps(t *testing.T) {
 	}
 }
 
-func TestMarkdownWriterPending(t *testing.T) {
-	t.Skip("markdown writer not available yet in carve-rs 0.2")
+// C2-W-035: the canonical writer writes a heading with `=`.
+func TestCarveWriter(t *testing.T) {
+	out, err := ToCarve("# Hi")
+	if err != nil || out != "= Hi\n" {
+		t.Fatalf("ToCarve: %q (%v)", out, err)
+	}
+	aligned, err := Format(context.Background(), "| a | longer |\n| b | c |\n", true)
+	if err != nil || aligned != "| a | longer |\n| b | c      |\n" {
+		t.Fatalf("Format aligned: %q (%v)", aligned, err)
+	}
 }
-func TestPlainWriterPending(t *testing.T) { t.Skip("plain writer not available yet in carve-rs 0.2") }
-func TestANSIWriterPending(t *testing.T)  { t.Skip("ansi writer not available yet in carve-rs 0.2") }
-func TestCarveWriterPending(t *testing.T) { t.Skip("carve writer not available yet in carve-rs 0.2") }
-func TestExtensionHostPending(t *testing.T) {
-	t.Skip("extension registration not available yet through the WASI JSON boundary")
+
+func TestHTMLImporter(t *testing.T) {
+	raw, err := FromHTML("<p>Hello <strong>world</strong></p>")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var imported struct {
+		Source string `json:"source"`
+		Tree   struct {
+			Type string `json:"type"`
+		} `json:"tree"`
+	}
+	if err := json.Unmarshal(raw, &imported); err != nil || imported.Source != "Hello *world*\n" || imported.Tree.Type != "document" {
+		t.Fatalf("FromHTML: %s (%v)", raw, err)
+	}
+}
+
+func TestMarkdownWriterPending(t *testing.T) {
+	t.Skip("markdown writer not available yet in carve-rs 0.2 (carve-rs#4327, carve-rs#4349)")
+}
+func TestPlainWriterPending(t *testing.T) {
+	t.Skip("plain writer not available yet in carve-rs 0.2 (carve-rs#4327, carve-rs#4349)")
+}
+func TestANSIWriterPending(t *testing.T) {
+	t.Skip("ansi writer not available yet in carve-rs 0.2 (carve-rs#4327, carve-rs#4349)")
 }
 
 func TestPinnedArtifact(t *testing.T) {
@@ -242,8 +342,8 @@ func TestPinnedArtifact(t *testing.T) {
 	if err != nil || len(strings.TrimSpace(string(rev))) != 40 {
 		t.Fatalf("engine pin: %q (%v)", rev, err)
 	}
-	digest, err := os.ReadFile("internal/wasm/carve2.wasm.sha256")
-	if err != nil || !strings.HasSuffix(strings.TrimSpace(string(digest)), "carve2.wasm") {
+	digest, err := os.ReadFile("internal/wasm/carve.wasm.sha256")
+	if err != nil || !strings.HasSuffix(strings.TrimSpace(string(digest)), "carve.wasm") {
 		t.Fatalf("engine digest: %q (%v)", digest, err)
 	}
 }

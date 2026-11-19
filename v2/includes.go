@@ -1,4 +1,4 @@
-package carve2
+package carve
 
 import (
 	"context"
@@ -85,11 +85,11 @@ func (f confinedFS) Open(name string) (fs.File, error) { return f.root.Open(name
 
 func (inc Include) guestFile() (string, error) {
 	if inc.Root == "" || inc.SourcePath == "" || !filepath.IsAbs(inc.Root) || !filepath.IsAbs(inc.SourcePath) {
-		return "", errors.New("carve2: Include.Root and Include.SourcePath must be absolute paths")
+		return "", errors.New("carve: Include.Root and Include.SourcePath must be absolute paths")
 	}
 	rel, err := filepath.Rel(inc.Root, inc.SourcePath)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("carve2: source path is outside the include root")
+		return "", fmt.Errorf("carve: source path is outside the include root")
 	}
 	return filepath.ToSlash(rel), nil
 }
@@ -109,22 +109,19 @@ func RenderWithIncludesContext(ctx context.Context, source string, format Output
 	if err != nil {
 		return IncludeResult{}, err
 	}
-	for _, key := range []string{"mode", "profile", "rawHtml", "urlPolicy", "strictLosses", "roundtrip", "sourceLines", "symbols"} {
+	for _, key := range []string{"mode", "profile", "rawHtml", "urlPolicy", "strictLosses", "roundtrip", "sourceLines", "symbols", "renderers"} {
 		delete(parseOpts, key)
 	}
 	parseOpts["includes"] = map[string]any{"root": "/carve-root", "file": file}
 	root, err := os.OpenRoot(inc.Root)
 	if err != nil {
-		return IncludeResult{}, fmt.Errorf("carve2: open include root: %w", err)
+		return IncludeResult{}, fmt.Errorf("carve: open include root: %w", err)
 	}
 	defer root.Close()
 	mount := confinedFS{root: root}
 	var parsed ParseResult
 	err = callFS(ctx, map[string]any{"call": "parseWithDiagnostics", "source": source, "options": parseOpts}, &parsed, mount)
 	if err != nil {
-		if strings.Contains(err.Error(), "include root cannot be read") {
-			return IncludeResult{}, fmt.Errorf("carve2: WASI include resolver not available yet: %w", err)
-		}
 		return IncludeResult{}, err
 	}
 	deps, err := IncludeDependencies(ctx, parsed.Tree, file)
@@ -137,16 +134,16 @@ func RenderWithIncludesContext(ctx context.Context, source string, format Output
 		return IncludeResult{}, err
 	}
 	if format == "" || format == OutputHTML {
+		// Rendered from source, not from parsed.Tree: a tree render drops the
+		// expanded include children (carve-rs#4331). The record holds the
+		// parse entries too.
+		renderOpts["includes"] = parseOpts["includes"]
 		var rendered RenderResult
-		err = Call(ctx, map[string]any{"call": "renderWithDiagnostics", "tree": json.RawMessage(parsed.Tree), "options": renderOpts}, &rendered)
+		err = callFS(ctx, map[string]any{"call": "renderWithDiagnostics", "source": source, "options": renderOpts}, &rendered, mount)
 		if err != nil {
 			return IncludeResult{}, err
 		}
-		all := append(parsed.Diagnostics, rendered.Diagnostics...)
-		return IncludeResult{Output: rendered.HTML, Diagnostics: all, SuppressedDiagnostics: parsed.SuppressedDiagnostics + rendered.SuppressedDiagnostics, Dependencies: deps, Warnings: includeWarnings(all, inc.Root), SuppressedWarnings: parsed.SuppressedDiagnostics}, nil
-	}
-	if format == OutputCarve {
-		return IncludeResult{}, errors.New("carve2: carve writer not available yet for included trees")
+		return IncludeResult{Output: rendered.HTML, Diagnostics: rendered.Diagnostics, SuppressedDiagnostics: rendered.SuppressedDiagnostics, Dependencies: deps, Warnings: includeWarnings(rendered.Diagnostics, inc.Root), SuppressedWarnings: rendered.SuppressedDiagnostics}, nil
 	}
 	var written struct {
 		Output      string       `json:"output"`
@@ -154,7 +151,7 @@ func RenderWithIncludesContext(ctx context.Context, source string, format Output
 	}
 	err = Call(ctx, map[string]any{"call": "write", "tree": parsed.Tree, "target": string(format)}, &written)
 	if unavailable(err) {
-		return IncludeResult{}, fmt.Errorf("carve2: %s writer not available yet: %w", format, err)
+		return IncludeResult{}, fmt.Errorf("carve: %s writer not available yet: %w", format, err)
 	}
 	if err != nil {
 		return IncludeResult{}, err

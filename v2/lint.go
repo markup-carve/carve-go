@@ -1,10 +1,9 @@
-package carve2
+package carve
 
 import (
 	"context"
 	"fmt"
 	"os"
-	"strings"
 )
 
 // LintOptions selects catalog rules and platform profiles. Rule values are
@@ -36,13 +35,10 @@ func Lint(ctx context.Context, source string, opts LintOptions) ([]Diagnostic, e
 	}
 	root, err := os.OpenRoot(opts.Include.Root)
 	if err != nil {
-		return nil, fmt.Errorf("carve2: open include root: %w", err)
+		return nil, fmt.Errorf("carve: open include root: %w", err)
 	}
 	defer root.Close()
 	options["includes"] = map[string]any{"root": "/carve-root", "file": file}
 	err = callFS(ctx, map[string]any{"call": "lint", "source": source, "options": options}, &result, confinedFS{root: root})
-	if err != nil && strings.Contains(err.Error(), "include root cannot be read") {
-		return nil, fmt.Errorf("carve2: WASI include resolver not available yet: %w", err)
-	}
 	return result.Diagnostics, err
 }

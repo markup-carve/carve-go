@@ -1,6 +1,6 @@
-// Package carve2 runs the Carve 0.2 Rust engine through its WASI JSON call boundary.
+// Package carve runs the Carve 0.2 Rust engine through its WASI JSON call boundary.
 // It is separate from the root package, which retains the Carve 0.1 contract.
-package carve2
+package carve
 
 import (
 	"bytes"
@@ -18,7 +18,7 @@ import (
 	"github.com/tetratelabs/wazero/sys"
 )
 
-//go:embed internal/wasm/carve2.wasm
+//go:embed internal/wasm/carve.wasm
 var wasm []byte
 
 const maxMemoryPages = 8192
@@ -36,12 +36,12 @@ func engine() (wazero.Runtime, wazero.CompiledModule, error) {
 		cfg := wazero.NewRuntimeConfig().WithCloseOnContextDone(true).WithMemoryLimitPages(maxMemoryPages)
 		compiled.runtime = wazero.NewRuntimeWithConfig(ctx, cfg)
 		if _, err := wasi_snapshot_preview1.Instantiate(ctx, compiled.runtime); err != nil {
-			compiled.err = fmt.Errorf("carve2: initialize WASI: %w", err)
+			compiled.err = fmt.Errorf("carve: initialize WASI: %w", err)
 			return
 		}
 		compiled.module, compiled.err = compiled.runtime.CompileModule(ctx, wasm)
 		if compiled.err != nil {
-			compiled.err = fmt.Errorf("carve2: compile WASI engine: %w", compiled.err)
+			compiled.err = fmt.Errorf("carve: compile WASI engine: %w", compiled.err)
 		}
 	})
 	return compiled.runtime, compiled.module, compiled.err
@@ -55,7 +55,7 @@ type EngineError struct {
 	Message  string `json:"message"`
 }
 
-func (e *EngineError) Error() string { return "carve2: " + e.Message }
+func (e *EngineError) Error() string { return "carve: " + e.Message }
 
 // Call invokes a 0.2 tooling call. Request and result use the JSON names in
 // the public 0.2 tooling contract. Each call has a fresh WASI instance.
@@ -65,18 +65,18 @@ func Call(ctx context.Context, request any, result any) error {
 
 func callFS(ctx context.Context, request any, result any, mount fs.FS) error {
 	if ctx == nil {
-		return errors.New("carve2: nil context")
+		return errors.New("carve: nil context")
 	}
 	data, err := json.Marshal(request)
 	if err != nil {
-		return fmt.Errorf("carve2: encode request: %w", err)
+		return fmt.Errorf("carve: encode request: %w", err)
 	}
 	rt, mod, err := engine()
 	if err != nil {
 		return err
 	}
 	var stdout, stderr bytes.Buffer
-	cfg := wazero.NewModuleConfig().WithName("").WithArgs("carve2", "call").
+	cfg := wazero.NewModuleConfig().WithName("").WithArgs("carve", "call").
 		WithStdin(bytes.NewReader(data)).WithStdout(&stdout).WithStderr(&stderr)
 	if mount != nil {
 		cfg = cfg.WithFSConfig(wazero.NewFSConfig().WithFSMount(mount, "/carve-root"))
@@ -86,11 +86,11 @@ func callFS(ctx context.Context, request any, result any, mount fs.FS) error {
 		_ = instance.Close(ctx)
 	}
 	if ctx.Err() != nil {
-		return fmt.Errorf("carve2: call interrupted: %w", ctx.Err())
+		return fmt.Errorf("carve: call interrupted: %w", ctx.Err())
 	}
 	if runErr != nil {
 		if _, ok := runErr.(*sys.ExitError); !ok {
-			return fmt.Errorf("carve2: WASI call: %w", runErr)
+			return fmt.Errorf("carve: WASI call: %w", runErr)
 		}
 	}
 	var response struct {
@@ -98,19 +98,19 @@ func callFS(ctx context.Context, request any, result any, mount fs.FS) error {
 		Error *EngineError    `json:"error"`
 	}
 	if err := json.Unmarshal(stdout.Bytes(), &response); err != nil {
-		return fmt.Errorf("carve2: invalid response: %w (stderr: %s)", err, strings.TrimSpace(stderr.String()))
+		return fmt.Errorf("carve: invalid response: %w (stderr: %s)", err, strings.TrimSpace(stderr.String()))
 	}
 	if response.Error != nil {
 		return response.Error
 	}
 	if len(response.OK) == 0 {
-		return errors.New("carve2: response has no result")
+		return errors.New("carve: response has no result")
 	}
 	if result == nil {
 		return nil
 	}
 	if err := json.Unmarshal(response.OK, result); err != nil {
-		return fmt.Errorf("carve2: decode result: %w", err)
+		return fmt.Errorf("carve: decode result: %w", err)
 	}
 	return nil
 }
