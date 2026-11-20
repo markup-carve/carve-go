@@ -35,6 +35,15 @@ type Options struct {
 
 // StandardExtensions lists the extensions Options.Extensions can name.
 var StandardExtensions = []string{
+	"carve.autolink",
+	"carve.externalLinks",
+	"carve.headingLevelShift",
+	"carve.headingNumbers",
+	"carve.headingPermalinks",
+	"carve.headingReference",
+	"carve.linkPolicy",
+	"carve.toc",
+	"carve.tocPlacement",
 	"carve.cite", "carve.codeCallouts", "carve.codeGroup", "carve.colorSwatch", "carve.details",
 	"carve.fencedRender.abc", "carve.fencedRender.chart", "carve.fencedRender.d2", "carve.fencedRender.graphviz",
 	"carve.fencedRender.mermaid", "carve.fencedRender.plantuml", "carve.fencedRender.vega-lite", "carve.fencedRender.wavedrom",

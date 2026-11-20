@@ -165,6 +165,26 @@ func TestStandardExtensions(t *testing.T) {
 	}
 }
 
+func TestNavigationExtensions(t *testing.T) {
+	names := []string{"carve.autolink", "carve.externalLinks", "carve.headingLevelShift", "carve.headingNumbers", "carve.headingPermalinks", "carve.headingReference", "carve.linkPolicy", "carve.toc", "carve.tocPlacement"}
+	for _, name := range names {
+		found := false
+		for _, listed := range StandardExtensions {
+			if listed == name {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("%s absent from StandardExtensions", name)
+		}
+		html, err := ToHTMLOptions("Hi", Options{Extensions: []string{name}})
+		if err != nil || html != "<p>Hi</p>" {
+			t.Fatalf("%s: %q (%v)", name, html, err)
+		}
+	}
+}
+
 func TestIncludesAndDependencies(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "part.crv"), []byte("*inside*"), 0600); err != nil {
