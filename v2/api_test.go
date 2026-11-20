@@ -259,9 +259,6 @@ func TestUnresolvedIncludeLossNamesItsFile(t *testing.T) {
 		if d.Code != "include-unresolved" {
 			continue
 		}
-		if d.Message == `Include "" could not be resolved.` {
-			t.Skip("carve-rs#4351: include-unresolved names an empty path")
-		}
 		if d.Message != `Include "missing.crv" could not be resolved.` {
 			t.Fatalf("include-unresolved: %q", d.Message)
 		}
@@ -350,16 +347,6 @@ func TestHTMLImporter(t *testing.T) {
 	if err := json.Unmarshal(raw, &imported); err != nil || imported.Source != "Hello *world*\n" || imported.Tree.Type != "document" {
 		t.Fatalf("FromHTML: %s (%v)", raw, err)
 	}
-}
-
-func TestMarkdownWriterPending(t *testing.T) {
-	t.Skip("markdown writer not available yet in carve-rs 0.2 (carve-rs#4327, carve-rs#4349)")
-}
-func TestPlainWriterPending(t *testing.T) {
-	t.Skip("plain writer not available yet in carve-rs 0.2 (carve-rs#4327, carve-rs#4349)")
-}
-func TestANSIWriterPending(t *testing.T) {
-	t.Skip("ansi writer not available yet in carve-rs 0.2 (carve-rs#4327, carve-rs#4349)")
 }
 
 func TestPinnedArtifact(t *testing.T) {
