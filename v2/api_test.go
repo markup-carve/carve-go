@@ -156,6 +156,13 @@ func TestStandardExtensions(t *testing.T) {
 			t.Fatalf("%s: %v", name, err)
 		}
 	}
+	html, err = ToHTMLOptions("::: details\nBody\n:::\n", Options{Extensions: []string{"carve.details"}, Renderers: map[string]string{"carve.details": "standard"}})
+	if err != nil || !strings.Contains(html, "<details>") {
+		t.Fatalf("carve.details: %q (%v)", html, err)
+	}
+	if _, err := ToHTMLOptions("Hi", Options{Extensions: []string{"carve.nope"}}); err == nil {
+		t.Fatal("an unknown extension name was accepted")
+	}
 }
 
 func TestIncludesAndDependencies(t *testing.T) {
@@ -216,9 +223,6 @@ func TestIncludeWithExtensions(t *testing.T) {
 	}
 	inc := Include{Root: root, SourcePath: filepath.Join(root, "main.crv")}
 	result, err := RenderWithIncludes("{{ part.crv }}", OutputHTML, Options{Extensions: []string{"carve.wiki"}}, inc)
-	if err == nil && result.Output == "<p>{{ part.crv }}</p>" {
-		t.Skip("carve-rs#4352: the extensions option turns include expansion off")
-	}
 	if err != nil || result.Output != "<p>Page</p>" {
 		t.Fatalf("include with extension: %q (%v)", result.Output, err)
 	}
@@ -280,15 +284,16 @@ func TestIncludeMountConfinesSymlinks(t *testing.T) {
 	}
 }
 
-func TestWriterGaps(t *testing.T) {
-	if _, err := ToMarkdown("Hi"); err == nil || !strings.Contains(err.Error(), "writer") {
-		t.Fatalf("Markdown writer gap: %v", err)
+func TestWriters(t *testing.T) {
+	source := "= Hi\n\n/em/ *strong*\n"
+	if out, err := ToMarkdown(source); err != nil || out != "# Hi\n\n*em* **strong**\n" {
+		t.Fatalf("Markdown writer: %q (%v)", out, err)
 	}
-	if _, err := ToPlainText("Hi"); err == nil || !strings.Contains(err.Error(), "writer") {
-		t.Fatalf("plain writer gap: %v", err)
+	if out, err := ToPlainText(source); err != nil || out != "Hi\n\nem strong\n" {
+		t.Fatalf("plain writer: %q (%v)", out, err)
 	}
-	if _, err := ToANSI("Hi"); err == nil || !strings.Contains(err.Error(), "writer") {
-		t.Fatalf("ANSI writer gap: %v", err)
+	if out, err := ToANSI(source); err != nil || !strings.Contains(out, "\x1b[3mem\x1b[0m") {
+		t.Fatalf("ANSI writer: %q (%v)", out, err)
 	}
 	if _, err := FromMarkdown("Hi"); err == nil {
 		t.Fatal("Markdown importer unexpectedly available")

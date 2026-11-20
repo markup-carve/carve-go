@@ -34,7 +34,14 @@ type Options struct {
 }
 
 // StandardExtensions lists the extensions Options.Extensions can name.
-var StandardExtensions = []string{"carve.cite", "carve.imgFence.image", "carve.imgFence.img", "carve.tabs", "carve.wiki"}
+var StandardExtensions = []string{
+	"carve.cite", "carve.codeCallouts", "carve.codeGroup", "carve.colorSwatch", "carve.details",
+	"carve.fencedRender.abc", "carve.fencedRender.chart", "carve.fencedRender.d2", "carve.fencedRender.graphviz",
+	"carve.fencedRender.mermaid", "carve.fencedRender.plantuml", "carve.fencedRender.vega-lite", "carve.fencedRender.wavedrom",
+	"carve.glossary", "carve.imgFence.image", "carve.imgFence.img", "carve.index", "carve.inlineFootnotesToParentheses",
+	"carve.listTable", "carve.mathBlock", "carve.references", "carve.semanticSpan", "carve.smartQuotes",
+	"carve.spoiler", "carve.spoilerBlock", "carve.tabNormalize", "carve.tabs", "carve.wiki",
+}
 
 type URLPolicy struct {
 	Allow []string
