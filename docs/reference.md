@@ -1,5 +1,7 @@
 # carve-go reference
 
+This reference documents the root package for Carve 0.1. For the 0.2 package and migration, see [Go binding migration to Carve 0.2](v2.md).
+
 A pure-Go module that renders [Carve](https://markup-carve.github.io/carve/)
 markup to HTML.
 
