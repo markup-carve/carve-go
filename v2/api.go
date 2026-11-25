@@ -16,11 +16,13 @@ func unavailable(err error) bool {
 
 // Options uses the 0.2 option names. The zero value keeps raw HTML disabled.
 type Options struct {
-	RawHTML      bool
-	URLPolicy    *URLPolicy
-	Mode         string
-	Profile      string
-	HeadingIDs   string
+	RawHTML    bool
+	URLPolicy  *URLPolicy
+	Mode       string
+	Profile    string
+	HeadingIDs string
+	// HeadingShift adds 0 to 5 to every heading level (C2-H-208).
+	HeadingShift int
 	Symbols      map[string]string
 	StrictLosses bool
 	Roundtrip    bool
@@ -37,7 +39,6 @@ type Options struct {
 var StandardExtensions = []string{
 	"carve.autolink",
 	"carve.externalLinks",
-	"carve.headingLevelShift",
 	"carve.headingNumbers",
 	"carve.headingPermalinks",
 	"carve.headingReference",
@@ -106,6 +107,9 @@ func (o Options) data() (map[string]any, error) {
 	}
 	if o.HeadingIDs != "" {
 		m["headingIds"] = o.HeadingIDs
+	}
+	if o.HeadingShift != 0 {
+		m["headingShift"] = o.HeadingShift
 	}
 	if o.Symbols != nil {
 		m["symbols"] = o.Symbols
