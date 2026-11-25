@@ -305,7 +305,8 @@ func Format(ctx context.Context, source string, alignTables bool) (string, error
 	return result.Source, err
 }
 
-// ImportDocument imports a foreign document; the engine reads "html".
+// ImportDocument imports a foreign document: "html", "gfm", "markdown"
+// (CommonMark only) or "djot" (C2-T-003).
 func ImportDocument(ctx context.Context, source, format string) (json.RawMessage, error) {
 	var result json.RawMessage
 	err := Call(ctx, map[string]any{"call": "importDocument", "source": source, "from": format}, &result)
@@ -317,6 +318,8 @@ func ImportDocument(ctx context.Context, source, format string) (json.RawMessage
 func FromHTML(source string) (json.RawMessage, error) {
 	return ImportDocument(context.Background(), source, "html")
 }
+
+// FromMarkdown imports GitHub Flavored Markdown, which the 0.1 importer read.
 func FromMarkdown(source string) (json.RawMessage, error) {
-	return nil, errors.New("carve: Markdown importer not available in the 0.2 engine")
+	return ImportDocument(context.Background(), source, "gfm")
 }

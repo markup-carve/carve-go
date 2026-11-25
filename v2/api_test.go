@@ -343,8 +343,8 @@ func TestWriters(t *testing.T) {
 	if out, err := ToANSI(source); err != nil || !strings.Contains(out, "\x1b[3mem\x1b[0m") {
 		t.Fatalf("ANSI writer: %q (%v)", out, err)
 	}
-	if _, err := FromMarkdown("Hi"); err == nil {
-		t.Fatal("Markdown importer unexpectedly available")
+	if out, err := FromMarkdown("Hi"); err != nil || !strings.Contains(string(out), `"source":"Hi\n"`) {
+		t.Fatalf("Markdown importer: %s (%v)", out, err)
 	}
 	_, err := WriteTree(context.Background(), json.RawMessage(`{}`), "markdown", WriteOptions{})
 	if err == nil || strings.Contains(err.Error(), "writer not available yet") {
@@ -388,5 +388,33 @@ func TestPinnedArtifact(t *testing.T) {
 	digest, err := os.ReadFile("internal/wasm/carve.wasm.sha256")
 	if err != nil || !strings.HasSuffix(strings.TrimSpace(string(digest)), "carve.wasm") {
 		t.Fatalf("engine digest: %q (%v)", digest, err)
+	}
+}
+
+// C2-T-003: the engine importers stay reachable; FromMarkdown reads GFM.
+func TestMarkdownImport(t *testing.T) {
+	source := "| a |\n|---|\n| b |\n\n~~gone~~ *em*\n"
+	got, err := FromMarkdown(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := ImportDocument(context.Background(), source, "gfm")
+	if err != nil || string(got) != string(want) {
+		t.Fatalf("FromMarkdown differs from gfm import: %s vs %s (%v)", got, want, err)
+	}
+	var record struct {
+		Source string          `json:"source"`
+		Tree   json.RawMessage `json:"tree"`
+	}
+	if err := json.Unmarshal(got, &record); err != nil || !strings.Contains(record.Source, "|=") || len(record.Tree) == 0 {
+		t.Fatalf("GFM table did not import as a Carve table: %q (%v)", record.Source, err)
+	}
+	for _, format := range []string{"html", "markdown", "gfm", "djot"} {
+		if _, err := ImportDocument(context.Background(), "*em*\n", format); err != nil {
+			t.Fatalf("%s import: %v", format, err)
+		}
+	}
+	if _, err := ImportDocument(context.Background(), "x", "rtf"); err == nil {
+		t.Fatal("unknown import format accepted")
 	}
 }
