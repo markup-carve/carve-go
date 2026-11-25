@@ -166,7 +166,7 @@ func TestStandardExtensions(t *testing.T) {
 }
 
 func TestNavigationExtensions(t *testing.T) {
-	names := []string{"carve.autolink", "carve.externalLinks", "carve.headingLevelShift", "carve.headingNumbers", "carve.headingPermalinks", "carve.headingReference", "carve.linkPolicy", "carve.toc", "carve.tocPlacement"}
+	names := []string{"carve.autolink", "carve.externalLinks", "carve.headingNumbers", "carve.headingPermalinks", "carve.headingReference", "carve.linkPolicy", "carve.toc", "carve.tocPlacement"}
 	for _, name := range names {
 		found := false
 		for _, listed := range StandardExtensions {
@@ -182,6 +182,37 @@ func TestNavigationExtensions(t *testing.T) {
 		if err != nil || html != "<p>Hi</p>" {
 			t.Fatalf("%s: %q (%v)", name, html, err)
 		}
+	}
+}
+
+func TestHeadingShift(t *testing.T) {
+	// carve#6325 (C2-H-208): headingShift replaced the carve.headingLevelShift extension.
+	for _, listed := range StandardExtensions {
+		if listed == "carve.headingLevelShift" {
+			t.Fatal("carve.headingLevelShift is still listed")
+		}
+	}
+	html, err := ToHTMLOptions("= H\n", Options{HeadingShift: 1})
+	var engineErr *EngineError
+	if errors.As(err, &engineErr) && strings.Contains(engineErr.Message, "unknown option") {
+		t.Skip("the embedded engine predates headingShift")
+	}
+	if err != nil || !strings.Contains(html, "<h2") {
+		t.Fatalf("shift 1: %q (%v)", html, err)
+	}
+	result, err := RenderWithDiagnostics(context.Background(), "====== H\n", Options{HeadingShift: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, entry := range result.Diagnostics {
+		found = found || entry.Code == "heading-shift-above-6"
+	}
+	if !found {
+		t.Fatalf("an h6 shifted by 1 reported no heading-shift-above-6: %+v", result.Diagnostics)
+	}
+	if _, err := ToHTMLOptions("= H\n", Options{HeadingShift: 6}); err == nil {
+		t.Fatal("headingShift 6 was accepted")
 	}
 }
 
