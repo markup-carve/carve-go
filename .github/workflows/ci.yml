@@ -177,10 +177,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Check out the spec corpus at main
+      # The root package is the 0.1 binding; spec main is 0.2 since the switch.
+      - name: Check out the spec corpus at 0.1
         uses: actions/checkout@v7
         with:
           repository: markup-carve/carve
+          ref: '0.1'
           path: spec
 
       - name: Set up Go
@@ -287,10 +289,13 @@ jobs:
 
       # fetch-depth: 0 is required. The guard runs `merge-base --is-ancestor`
       # against main, which needs the history to be there.
+      # The root REV is a carve-rs 0.1 commit, and carve-rs main no longer
+      # carries tools/check-engine-pin.py.
       - name: Check out carve-rs
         uses: actions/checkout@v7
         with:
           repository: markup-carve/carve-rs
+          ref: '0.1'
           path: carve-rs
           fetch-depth: 0
 
@@ -298,7 +303,7 @@ jobs:
       - name: Check the recorded engine revision
         run: |
           python3 carve-rs/tools/check-engine-pin.py \
-            --engine carve-rs --github \
+            --engine carve-rs --branch 0.1 --github \
             --form rev-file --file internal/wasm/REV \
             --artifact internal/wasm/carve.wasm \
             --artifact-digest internal/wasm/carve.wasm.sha256
