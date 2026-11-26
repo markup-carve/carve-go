@@ -1,6 +1,6 @@
 # Carve 0.2 for Go
 
-This package embeds the `carve call` WASI command (`carve.wasm`) from a pinned commit on the carve-rs `next2` branch. The root `carve-go` package keeps its Carve 0.1 API. Import `github.com/markup-carve/carve-go/v2` for Carve 0.2. The package is not released yet; pin this repository's `next2` commit with Go's git module support when testing it from another repository.
+This package embeds the `carve call` WASI command (`carve.wasm`) from a pinned commit on the carve-rs `main` branch. The root `carve-go` package keeps its Carve 0.1 API. Import `github.com/markup-carve/carve-go/v2` for Carve 0.2. The package is not released yet; pin a `main` commit of this repository with Go's git module support when testing it from another repository.
 
 ```go
 import carve "github.com/markup-carve/carve-go/v2"
@@ -16,4 +16,4 @@ The writer registry contains HTML, the canonical Carve writer (`ToCarve`, `Forma
 
 `RenderWithIncludes` and `Lint` with an `Include` mount the root read-only into the guest and expand includes there; a 0.2 diagnostic from an included file carries `File` and a byte `Range` but no include chain. Combining includes with `Options.Extensions` does not expand yet (carve-rs#4352).
 
-The embedded bytes are in `internal/wasm/carve.wasm`. `REV` pins the exact carve-rs `next2` commit, and `carve.wasm.sha256` records the artifact hash. To rebuild, check out that commit in a clean carve-rs clone and run `CARVE_RS=/path/to/carve-rs ./v2/build-wasm.sh`. The source checkout needs the WASI target and Rust toolchain. Go users need neither Rust nor a WASI runtime outside wazero.
+The embedded bytes are in `internal/wasm/carve.wasm`. `REV` pins the exact carve-rs commit, and `carve.wasm.sha256` records the artifact hash. To rebuild, check out that commit in a clean carve-rs clone and run `CARVE_RS=/path/to/carve-rs ./v2/build-wasm.sh`. The source checkout needs the WASI target and Rust toolchain. Go users need neither Rust nor a WASI runtime outside wazero.
