@@ -13,11 +13,14 @@ if [ -n "$(git -C "$rs" status --porcelain)" ]; then
   exit 1
 fi
 rev="$(git -C "$rs" rev-parse HEAD)"
+git -C "$rs" fetch --quiet origin main
 if ! git -C "$rs" merge-base --is-ancestor "$rev" origin/main; then
   echo 'carve: engine commit must be on origin/main' >&2
   exit 1
 fi
 build_dir="${CARGO_TARGET_DIR:-/var/tmp/cargo-shared/carve-rs}"
+mkdir -p "$build_dir"
+build_dir="$(cd "$build_dir" && pwd)"
 remap="--remap-path-prefix=$rs=/carve-rs --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo"
 (
   cd "$rs"
