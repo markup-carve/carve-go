@@ -123,9 +123,12 @@ jobs:
           echo "notes: ${#body} characters"
 
   suite:
-    name: The suite passes against the embedded engine
+    name: The suite passes against the embedded engine and the spec corpus
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v7
 
@@ -145,15 +148,35 @@ jobs:
           git -C carve-rs-main cat-file -e "$rev^{commit}"
           git -C carve-rs-main merge-base --is-ancestor "$rev" HEAD
 
+      # The spec commit the embedded engine was generated from.
+      - name: Resolve the spec commit the embedded engine pins
+        id: pin
+        run: |
+          rev="$(cat internal/wasm/REV)"
+          spec="$(git -C carve-rs-main show "$rev:spec-data/SOURCE_COMMIT" | tr -d '[:space:]')"
+          [[ "$spec" =~ ^[0-9a-f]{40}$ ]]
+          echo "carve-rs $rev pins spec $spec"
+          echo "spec=$spec" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the spec the embedded engine pins
+        uses: actions/checkout@v7
+        with:
+          repository: markup-carve/carve
+          ref: ${{ steps.pin.outputs.spec }}
+          path: spec
+
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
           go-version: stable
 
-      - name: Suite
+      - name: Suite, with the conformance corpus at the pinned spec
+        env:
+          CARVE_CONFORMANCE: ${{ github.workspace }}/spec/spec/0.2/conformance
         run: |
           go vet ./...
-          go test ./...
+          go test -v ./... 2>&1 | tee suite.log
+          grep -qE -- '--- PASS: TestConformance \(' suite.log
 
   tag:
     name: Create the tag

@@ -5,14 +5,18 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # corpus-drift measures against spec main, which moves without a commit here.
+  schedule:
+    - cron: "35 6 * * *"
   workflow_dispatch:
 
 jobs:
-  engine-pin:
+  engine-rev:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+
       - name: Check out carve-rs
         uses: actions/checkout@v7
         with:
@@ -52,3 +56,105 @@ jobs:
 
       - name: Test
         run: go test ./...
+
+  # Gates: the embedded engine renders the conformance corpus of the spec it
+  # was built from byte for byte.
+  corpus:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check out carve-rs
+        uses: actions/checkout@v7
+        with:
+          repository: markup-carve/carve-rs
+          ref: main
+          path: carve-rs-main
+          fetch-depth: 0
+
+      - name: Check the pinned WASI artifact and its source commit
+        run: |
+          (cd internal/wasm && sha256sum -c carve.wasm.sha256)
+          rev="$(cat internal/wasm/REV)"
+          [[ "$rev" =~ ^[0-9a-f]{40}$ ]]
+          git -C carve-rs-main cat-file -e "$rev^{commit}"
+          git -C carve-rs-main merge-base --is-ancestor "$rev" HEAD
+
+      # The spec commit the embedded engine was generated from.
+      - name: Resolve the spec commit the embedded engine pins
+        id: pin
+        run: |
+          rev="$(cat internal/wasm/REV)"
+          spec="$(git -C carve-rs-main show "$rev:spec-data/SOURCE_COMMIT" | tr -d '[:space:]')"
+          [[ "$spec" =~ ^[0-9a-f]{40}$ ]]
+          echo "carve-rs $rev pins spec $spec"
+          echo "spec=$spec" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the spec the embedded engine pins
+        uses: actions/checkout@v7
+        with:
+          repository: markup-carve/carve
+          ref: ${{ steps.pin.outputs.spec }}
+          path: spec
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: stable
+
+      - name: Conformance at the pinned spec
+        env:
+          CARVE_CONFORMANCE: ${{ github.workspace }}/spec/spec/0.2/conformance
+        run: |
+          go test -v -run 'TestConformance$' . 2>&1 | tee conformance.log
+          grep -qE -- '--- PASS: TestConformance \(' conformance.log
+
+  # Reports, never gates on the number: how far the engine is behind spec main.
+  # It fails only when nothing was measured.
+  corpus-drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check out spec main
+        uses: actions/checkout@v7
+        with:
+          repository: markup-carve/carve
+          path: spec
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: stable
+
+      - name: Report the drift against spec main
+        env:
+          CARVE_CONFORMANCE: ${{ github.workspace }}/spec/spec/0.2/conformance
+        run: |
+          go test -v -run 'TestConformance$' . > drift.log 2>&1 || true
+          spec="$(git -C spec rev-parse --short HEAD)"
+          diverging="$(grep -oE '[0-9]+ of [0-9]+ conformance entries diverge' drift.log | tail -1 || true)"
+          identical="$(grep -oE '[0-9]+ conformance entries byte-identical' drift.log | tail -1 || true)"
+          if [ -n "$diverging" ]; then
+            headline="$diverging at spec main ($spec)"
+          elif [ -n "$identical" ]; then
+            headline="0 diverging, $identical at spec main ($spec)"
+          else
+            echo "::error::the drift run logged no conformance count, so nothing was measured"
+            tail -40 drift.log
+            exit 1
+          fi
+          echo "$headline"
+          echo "::notice::$headline"
+          {
+            echo "## Embedded engine against spec main"
+            echo
+            echo "$headline"
+            echo
+            sed -n 's/.*divergent-list=//p' drift.log | tail -1 | tr ',' '\n' | sed '/^$/d; s/.*/- `&`/'
+          } >> "$GITHUB_STEP_SUMMARY"

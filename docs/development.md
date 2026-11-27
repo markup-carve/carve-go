@@ -22,8 +22,21 @@ With `CARVE_RS` unset the script uses a carve-rs checkout beside this one
 paths; `TestNoHostPathsInTrackedBinaries` fails the suite if one does. Commit the
 artifact, `REV` and the digest together.
 
-CI (`engine-pin`) checks that the artifact matches its digest and that `REV` is
-a full commit on carve-rs `main`.
+CI checks the pin in three jobs:
+
+- `engine-rev` fails when the artifact does not match its digest or `REV` is not
+  a full commit on carve-rs `main`.
+- `corpus` renders the `spec/0.2/conformance` entries of the spec commit the
+  engine was built from (`spec-data/SOURCE_COMMIT` at `REV` in carve-rs) and
+  fails on any difference.
+- `corpus-drift` runs the same comparison against spec `main` and reports how
+  many entries diverge. It fails only when nothing was measured.
+
+Locally:
+
+```bash
+CARVE_CONFORMANCE=/path/to/carve/spec/0.2/conformance go test -run 'TestConformance$' -v .
+```
 
 ## Cutting a release
 
@@ -36,7 +49,8 @@ gh workflow run tag.yml --repo markup-carve/carve-go --ref main -f tag=v0.2.0
 ```
 
 It refuses the tag unless the name agrees with `CHANGELOG.md`, the commit is an
-ancestor of `main`, the engine pin checks pass and the suite is green. The
+ancestor of `main`, the engine pin checks pass and the suite is green with the
+conformance corpus of the pinned spec. The
 `Release` workflow runs the same gates, waits for the `release-approval`
 environment and creates the tag last.
 
