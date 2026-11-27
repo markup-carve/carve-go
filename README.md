@@ -7,7 +7,7 @@ The package embeds the `carve call` WASI command (`carve.wasm`) built from a pin
 ## Install
 
 ```bash
-go get github.com/markup-carve/carve-go
+go get github.com/markup-carve/carve-go@v0.2
 ```
 
 ## Usage
