@@ -1,6 +1,7 @@
 package carve
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -26,10 +27,27 @@ type conformanceEntry struct {
 	Input      *string                    `json:"input"`
 	InputBytes string                     `json:"inputBytes"`
 	Files      json.RawMessage            `json:"files"`
+	Host       json.RawMessage            `json:"host"`
 	Options    map[string]json.RawMessage `json:"options"`
 	Expected   struct {
 		HTML *string `json:"html"`
 	} `json:"expected"`
+}
+
+func renderConformanceEntry(e conformanceEntry, opts Options) (string, error) {
+	if len(e.Host) == 0 {
+		return ToHTMLOptions(*e.Input, opts)
+	}
+	options, err := opts.data()
+	if err != nil {
+		return "", err
+	}
+	var result RenderResult
+	err = Call(context.Background(), map[string]any{
+		"call": "renderWithDiagnostics", "source": *e.Input,
+		"options": options, "host": e.Host,
+	}, &result)
+	return result.HTML, err
 }
 
 func conformanceOptions(raw map[string]json.RawMessage) (Options, []string) {
@@ -146,7 +164,7 @@ func TestConformance(t *testing.T) {
 			continue
 		}
 		compared++
-		got, err := ToHTMLOptions(*e.Input, opts)
+		got, err := renderConformanceEntry(e, opts)
 		if err != nil {
 			mismatches = append(mismatches, e.ID)
 			details[e.ID] = "error: " + err.Error()
