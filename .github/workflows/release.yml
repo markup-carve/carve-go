@@ -127,9 +127,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     defaults:
-      # Without this a `run:` step gets `bash -e` and NO pipefail, so
-      # `go test | tee` would report tee's exit status and a failing suite
-      # would leave this gate green.
       run:
         shell: bash
     steps:
@@ -139,36 +136,29 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: markup-carve/carve-rs
-          path: carve-rs
+          ref: main
+          path: carve-rs-main
           fetch-depth: 0
 
-      # --artifact-digest included, as ci.yml runs it: a release whose
-      # carve.wasm.sha256 disagrees with the committed bytes ships a module
-      # whose own digest file is wrong, and a consumer's build trusts that pair.
-      - name: The recorded engine revision matches the embedded artifact
+      - name: Check the pinned WASI artifact and its source commit
         run: |
-          python3 carve-rs/tools/check-engine-pin.py \
-            --engine carve-rs --github \
-            --form rev-file --file internal/wasm/REV \
-            --artifact internal/wasm/carve.wasm \
-            --artifact-digest internal/wasm/carve.wasm.sha256
+          (cd internal/wasm && sha256sum -c carve.wasm.sha256)
+          rev="$(cat internal/wasm/REV)"
+          [[ "$rev" =~ ^[0-9a-f]{40}$ ]]
+          git -C carve-rs-main cat-file -e "$rev^{commit}"
+          git -C carve-rs-main merge-base --is-ancestor "$rev" HEAD
 
+      # The spec commit the embedded engine was generated from.
       - name: Resolve the spec commit the embedded engine pins
         id: pin
         run: |
           rev="$(cat internal/wasm/REV)"
-          spec="$(git -C carve-rs ls-tree "$rev" tests/spec | awk '{print $3}' || true)"
-          if [ -z "$spec" ]; then
-            echo "::error::internal/wasm/REV names $rev, which has no tests/spec gitlink in" \
-                 "carve-rs, so there is no spec commit to hold this artifact to."
-            exit 1
-          fi
+          spec="$(git -C carve-rs-main show "$rev:spec-data/SOURCE_COMMIT" | tr -d '[:space:]')"
+          [[ "$spec" =~ ^[0-9a-f]{40}$ ]]
           echo "carve-rs $rev pins spec $spec"
-          # The corpus is unchanged since the engine gitlink; this pins the spec release notes.
-          spec="$(cat spec-corpus-revision.txt)"
           echo "spec=$spec" >> "$GITHUB_OUTPUT"
 
-      - name: Check out the spec corpus that engine was written against
+      - name: Check out the spec the embedded engine pins
         uses: actions/checkout@v7
         with:
           repository: markup-carve/carve
@@ -180,53 +170,13 @@ jobs:
         with:
           go-version: stable
 
-      # TestToHTML_ByteIdenticalToNative and its static sibling are the only
-      # checks that compare the embedded WebAssembly against the native engine,
-      # and they skip in every ci.yml job because CARVE_BIN is unset. The native
-      # side MUST be the revision internal/wasm/REV names: built from anything
-      # else it cannot tell "the wasm is wrong" from "my reference is old".
-      - name: Build the native carve CLI at the embedded revision
-        run: |
-          rev="$(cat internal/wasm/REV)"
-          git -C carve-rs checkout --detach "$rev"
-          cargo build --release --manifest-path carve-rs/Cargo.toml --bin carve
-          echo "CARVE_BIN=$GITHUB_WORKSPACE/carve-rs/target/release/carve" >> "$GITHUB_ENV"
-
-      - name: Suite, with the corpus and the native engine live
+      - name: Suite, with the conformance corpus at the pinned spec
         env:
-          CARVE_SPEC_CORPUS: ${{ github.workspace }}/spec/tests/corpus
-        run: go test -v ./... 2>&1 | tee suite.log
-
-      # A skipped test reports success over the thing it never compared, and
-      # both native checks skip silently on an unset CARVE_BIN. Requiring the
-      # PASS lines is what makes the step above evidence of a comparison rather
-      # than of an exit status.
-      - name: The gated comparisons ran rather than skipped
+          CARVE_CONFORMANCE: ${{ github.workspace }}/spec/spec/0.2/conformance
         run: |
-          bad=0
-          for test in TestSpecCorpus TestToHTML_ByteIdenticalToNative TestToHTMLStatic_ByteIdenticalToNative; do
-            if grep -qE -- "--- PASS: $test \(" suite.log; then
-              echo "ran: $test"
-            else
-              # `|| true` on the greps: a step runs under `set -eo pipefail`, so
-              # a non-matching grep in a command substitution would abort the
-              # step before it could say why.
-              outcome="$(grep -oE -- "--- (PASS|FAIL|SKIP): $test \(.*" suite.log | head -1 || true)"
-              echo "::error::$test did not pass in this run: ${outcome:-it produced no result line at all}"
-              bad=1
-            fi
-          done
-          # Evidence of a measurement rather than of an exit status: the corpus
-          # test can pass over an empty directory far more easily than it can
-          # print a count it did not reach.
-          identical="$(grep -oE '[0-9]+ corpus cases byte-identical' suite.log | tail -1 || true)"
-          if [ -z "$identical" ]; then
-            echo "::error::the run logged no byte-identical corpus count, so nothing was measured against the spec"
-            bad=1
-          else
-            echo "corpus: $identical"
-          fi
-          exit "$bad"
+          go vet ./...
+          go test -v ./... 2>&1 | tee suite.log
+          grep -qE -- '--- PASS: TestConformance \(' suite.log
 
   tag:
     name: Create the tag

@@ -1,12 +1,12 @@
 # Go binding migration to Carve 0.2
 
-The 0.2 binding is `github.com/markup-carve/carve-go/v2`. The root package remains the 0.1 binding. Pin a commit on this repository's `main` branch when testing 0.2; nothing is published yet. The 0.2 package embeds the `carve call` WASI binary (`carve.wasm`) built from the carve-rs commit in `v2/internal/wasm/REV`. No registry version is involved.
+From 0.2 on, the root package `github.com/markup-carve/carve-go` is the Carve 0.2 binding. The 0.1 binding stays on the `0.1` branch and its `v0.1.x` tags. During the 0.2 preview the same API lived in the `v2` subpackage; replace that import path with the root path. The package embeds the `carve call` WASI binary (`carve.wasm`) built from the carve-rs commit in `internal/wasm/REV`.
 
 ## Render and options
 
-| 0.1 root package | 0.2 package |
+| 0.1 | 0.2 |
 | --- | --- |
-| `ToHTML`, `ToHTMLOptions` | Same helper names in `v2`, backed by `renderWithDiagnostics` |
+| `ToHTML`, `ToHTMLOptions` | Same helper names, backed by `renderWithDiagnostics` |
 | `Render(source, target, opts)` | Same call shape and named writer targets |
 | `Options.Safe: true` | The 0.2 default has `rawHtml: false` and a denying URL policy. Use `Options.RawHTML: true` only for trusted source. |
 | `Options.Static: true` | `Options.Mode: "static"` |
@@ -20,13 +20,13 @@ The 0.2 binding is `github.com/markup-carve/carve-go/v2`. The root package remai
 
 ## Tree, lint, includes, and imports
 
-| 0.1 root package | 0.2 package |
+| 0.1 | 0.2 |
 | --- | --- |
 | `ParseAST` | Same helper, returning a 2.0 tree; `Parse` also returns diagnostics. `RenderTree`, `EncodeTree`, `DecodeTree`, and `ValidateTree` operate on that tree. Positions and diagnostic ranges are UTF-8 byte offsets. |
 | `LintWithOptions` with `Bundle` and `CaptionHints` | `Lint(ctx, source, LintOptions{Rules, Platforms, Include})`. Rules use the 0.2 rule catalog and values `on` or `off`. |
 | `RenderWithIncludes(source, target, opts, inc)` | Same call shape, with `RenderWithIncludesContext` for cancellation. `Include` still carries an absolute root and source path. The result has diagnostics and dependencies. It also keeps `Warnings` and `SuppressedWarnings` for Hugo callers. Each dependency has the 0.2 `Read` flag, the familiar `Resolved` alias, and a `HostPath` for a read file. `IncludeDependencies` reads the raw 0.2 dependencies from a tree. |
 | `FromHTML` | Same entry point, returning the 0.2 `importDocument` record. |
-| `FromMarkdown` | Same entry point, unavailable because Markdown import is outside core 0.2. |
+| `FromMarkdown` | Same entry point, returning the 0.2 `importDocument` record for GitHub Flavored Markdown. Markdown import is outside the 0.2 specification (C2-T-003). |
 | `DecisionTrace`, stamp calls, and `SelectIncludeRegion` | No 0.2 counterpart. The 0.2 upgrade tool in carve-js handles source migration. |
 
 `RenderWithIncludes` and `Lint` expand includes inside the mounted root. A 0.2 diagnostic from an included file names its `File` and byte `Range`; the 0.1 `IncludedBy` chain has no 0.2 counterpart. Includes expand with `Options.Extensions` set as well.
@@ -36,7 +36,7 @@ The 0.2 binding is `github.com/markup-carve/carve-go/v2`. The root package remai
 In a clean carve-rs checkout at the recorded commit, with `wasm32-wasip1` installed:
 
 ```sh
-CARVE_RS=/path/to/carve-rs ./v2/build-wasm.sh
+CARVE_RS=/path/to/carve-rs ./build-wasm.sh
 ```
 
 The script writes the WASI binary, the exact revision, and its checksum together. CI checks that the revision is an ancestor of carve-rs `main` and that the artifact matches its checksum. The binary is embedded, so a user of the Go package needs no Rust toolchain.
