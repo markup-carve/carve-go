@@ -35,6 +35,31 @@ type IncludeWarning struct {
 	File    string
 }
 
+// SelectIncludeRegion returns the 1-based inclusive content line range of a
+// named region. Code mode also accepts source-comment region markers.
+func SelectIncludeRegion(ctx context.Context, source, name string, code bool) (int, int, error) {
+	args := []string{"region"}
+	if code {
+		args = append(args, "--code")
+	}
+	args = append(args, name)
+	stdout, _, status, err := runCLI(ctx, args, source)
+	if err != nil {
+		return 0, 0, err
+	}
+	if status != 0 {
+		return 0, 0, fmt.Errorf("carve: include-region-invalid: %q", name)
+	}
+	var result struct {
+		Start int `json:"start"`
+		End   int `json:"end"`
+	}
+	if err := json.Unmarshal(stdout, &result); err != nil {
+		return 0, 0, fmt.Errorf("carve: invalid region response: %w", err)
+	}
+	return result.Start, result.End, nil
+}
+
 func IncludeDependencies(ctx context.Context, tree json.RawMessage, file string) ([]Dependency, error) {
 	var result struct {
 		Dependencies []Dependency `json:"dependencies"`

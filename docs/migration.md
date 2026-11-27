@@ -27,7 +27,8 @@ From 0.2 on, the root package `github.com/markup-carve/carve-go` is the Carve 0.
 | `RenderWithIncludes(source, target, opts, inc)` | Same call shape, with `RenderWithIncludesContext` for cancellation. `Include` still carries an absolute root and source path. The result has diagnostics and dependencies. It also keeps `Warnings` and `SuppressedWarnings` for Hugo callers. Each dependency has the 0.2 `Read` flag, the familiar `Resolved` alias, and a `HostPath` for a read file. `IncludeDependencies` reads the raw 0.2 dependencies from a tree. |
 | `FromHTML` | Same entry point, returning the 0.2 `importDocument` record. |
 | `FromMarkdown` | Same entry point, returning the 0.2 `importDocument` record for GitHub Flavored Markdown. Markdown import is outside the 0.2 specification (C2-T-003). |
-| `DecisionTrace`, stamp calls, and `SelectIncludeRegion` | No 0.2 counterpart. The 0.2 upgrade tool in carve-js handles source migration. |
+| `DecisionTrace` and stamp calls | No 0.2 counterpart. The 0.2 upgrade tool in carve-js handles source migration. |
+| `SelectIncludeRegion` | `SelectIncludeRegion(ctx, source, name, code)` returns the start and end content lines, or an `include-region-invalid` error. |
 
 `RenderWithIncludes` and `Lint` expand includes inside the mounted root. A 0.2 diagnostic from an included file names its `File` and byte `Range`; the 0.1 `IncludedBy` chain has no 0.2 counterpart. Includes expand with `Options.Extensions` set as well.
 

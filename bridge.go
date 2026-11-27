@@ -63,6 +63,35 @@ func Call(ctx context.Context, request any, result any) error {
 	return callFS(ctx, request, result, nil)
 }
 
+// runCLI invokes a command of the same embedded engine used by Call.
+func runCLI(ctx context.Context, args []string, source string) ([]byte, []byte, int, error) {
+	if ctx == nil {
+		return nil, nil, 0, errors.New("carve: nil context")
+	}
+	rt, mod, err := engine()
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	var stdout, stderr bytes.Buffer
+	argv := append([]string{"carve"}, args...)
+	cfg := wazero.NewModuleConfig().WithName("").WithArgs(argv...).
+		WithStdin(strings.NewReader(source)).WithStdout(&stdout).WithStderr(&stderr)
+	instance, runErr := rt.InstantiateModule(ctx, mod, cfg)
+	if instance != nil {
+		_ = instance.Close(ctx)
+	}
+	if ctx.Err() != nil {
+		return nil, nil, 0, fmt.Errorf("carve: call interrupted: %w", ctx.Err())
+	}
+	if runErr != nil {
+		if exit, ok := runErr.(*sys.ExitError); ok {
+			return stdout.Bytes(), stderr.Bytes(), int(exit.ExitCode()), nil
+		}
+		return nil, nil, 0, fmt.Errorf("carve: WASI command: %w", runErr)
+	}
+	return stdout.Bytes(), stderr.Bytes(), 0, nil
+}
+
 func callFS(ctx context.Context, request any, result any, mount fs.FS) error {
 	if ctx == nil {
 		return errors.New("carve: nil context")
