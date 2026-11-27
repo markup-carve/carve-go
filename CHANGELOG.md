@@ -9,14 +9,29 @@ line of Go changing, so rebuilds get an entry of their own.
 
 ## [Unreleased]
 
-### 0.2 preview
+## [0.2.0] - 2026-11-27
 
-- Add a `v2` Go package backed by the pinned carve-rs `next2` WASI JSON boundary, with HTML, tree, diagnostics, lint, includes, and writer calls. The root package retains the 0.1 contract.
-- Keep the Markdown, plain-text and ANSI writer entry points with explicit unavailable errors until the 0.2 engine implements them.
-- Embed the renamed engine: the `carve` WASI command (`v2/internal/wasm/carve.wasm`) from carve-rs `next2` `7fb7c249`, where `carve2.wasm` used to be. The `v2` Go package is named `carve`.
-- `RenderWithIncludes` and `Lint` with an `Include` expand includes in the mounted root (#115).
-- `Options.Extensions` and `Options.Renderers` select the engine's standard extensions; `StandardExtensions` lists them (#116).
-- `ToCarve`, `Format` and `FromHTML` work against the engine's canonical writer and HTML importer.
+carve-go now binds Carve 0.2. The root package is the 0.2 binding; the 0.1 binding stays on the `0.1` branch and its `v0.1.x` tags. [docs/migration.md](docs/migration.md) maps each 0.1 call to its 0.2 counterpart, and the spec's `UPGRADING.md` lists what changes in rendered output.
+
+### Breaking
+
+- The root package `github.com/markup-carve/carve-go` is the Carve 0.2 binding. It calls the public `carve call` JSON boundary of the embedded carve-rs WASI engine (#114, #129). `DecisionTrace`, `SelectIncludeRegion`, the stamp calls and the 0.1 render-loss report have no 0.2 counterpart.
+- Raw HTML is escaped and the URL policy applies by default. `Options.RawHTML` allows trusted raw HTML, and `Options.Mode: "static"` replaces `Options.Static`.
+- Tree JSON follows the 0.2 AST schema. Positions and diagnostic ranges are UTF-8 byte offsets.
+- `Lint` takes `LintOptions{Rules, Platforms, Include}` with the 0.2 rule catalog.
+- `FromHTML`, `FromMarkdown` and `ImportDocument` return the 0.2 `importDocument` record (`tree`, `source`, `diagnostics`), not Carve source with a fidelity report (#126).
+- A diagnostic from an included file carries `File` and a byte `Range`, but no include chain.
+
+### Improvements
+
+- `Options.Extensions` and `Options.Renderers` select the engine's standard extensions, the navigation extensions included. `StandardExtensions` lists them (#117, #119, #120).
+- `RenderWithIncludes` and `Lint` with an `Include` expand includes inside the mounted root (#117).
+- `Parse`, `RenderWithDiagnostics`, `RenderTree`, `WriteTree`, `EncodeTree`, `DecodeTree`, `ValidateTree`, `IncludeDependencies` and `Call` expose the 0.2 tree and tooling calls (#114).
+- `ToMarkdown`, `ToPlainText`, `ToANSI`, `ToCarve` and `Format` write through the engine's writers (#122, #123).
+- `Options.HeadingShift` adds 0 to 5 to every heading level (#125).
+- The embedded engine is carve-rs `284c05f30da3a00a0e7a1fd42fea9f5ce430d6dd`, the commit `internal/wasm/REV` names (#121, #122).
+
+**Full Changelog**: https://github.com/markup-carve/carve-go/compare/v0.1.11...v0.2.0
 
 ## [0.1.11] - 2026-11-12
 
@@ -318,7 +333,8 @@ First release. `ToHTML` and the AST surface over a carve-rs engine embedded as
 WebAssembly and driven with wazero, so the module has no cgo and no external
 process.
 
-[Unreleased]: https://github.com/markup-carve/carve-go/compare/v0.1.11...HEAD
+[Unreleased]: https://github.com/markup-carve/carve-go/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/markup-carve/carve-go/compare/v0.1.11...v0.2.0
 [0.1.11]: https://github.com/markup-carve/carve-go/compare/v0.1.10...v0.1.11
 [0.1.10]: https://github.com/markup-carve/carve-go/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/markup-carve/carve-go/compare/v0.1.8...v0.1.9
