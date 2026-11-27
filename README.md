@@ -1,13 +1,8 @@
 # carve-go
 
-A pure-Go module that renders [Carve](https://markup-carve.github.io/carve/)
-with the reference [carve-rs](https://github.com/markup-carve/carve-rs) engine.
-It embeds the engine as `wasm32-wasip1` and runs it with wazero, so callers need
-neither cgo nor a JavaScript host.
+A pure-Go module that renders [Carve](https://markup-carve.github.io/carve/) 0.2 with the [carve-rs](https://github.com/markup-carve/carve-rs) engine.
 
-## Carve 0.2 preview
-
-The 0.2 bridge is in the [v2 package](v2/README.md). It embeds a pinned carve-rs WASI build of the `carve` command (`carve.wasm`) and uses the public JSON call boundary. The root package remains the 0.1 binding. No 0.2 release has been published.
+The package embeds the `carve call` WASI command (`carve.wasm`) built from a pinned carve-rs commit and runs it with wazero, so callers need neither cgo nor a JavaScript host. The Carve 0.1 binding lives on the [`0.1` branch](https://github.com/markup-carve/carve-go/tree/0.1) and its `v0.1.x` tags; [docs/migration.md](docs/migration.md) maps its API to this one.
 
 ## Install
 
@@ -15,82 +10,26 @@ The 0.2 bridge is in the [v2 package](v2/README.md). It embeds a pinned carve-rs
 go get github.com/markup-carve/carve-go
 ```
 
-## Render Carve
+## Usage
 
 ```go
-package main
+import carve "github.com/markup-carve/carve-go"
 
-import (
-	"fmt"
-
-	carve "github.com/markup-carve/carve-go"
-)
-
-func main() {
-	html, err := carve.ToHTML("# Hello\n\nSome *bold* and /italic/ text.")
-	if err != nil {
-		panic(err)
-	}
-	fmt.Print(html)
-}
+html, err := carve.ToHTML("# Hello")
 ```
 
-Calls are safe across goroutines. Context variants such as `ToHTMLContext`
-allow cancellation and deadlines for each render.
+The 0.2 default escapes raw HTML and applies its URL policy. To allow trusted raw HTML, set `Options.RawHTML` explicitly. `Options.URLPolicy` can add an allow or deny list. `Options.Mode` accepts `interactive` or `static`. `Options.Profile`, `HeadingIDs`, `HeadingShift` (0 to 5, added to every heading level, C2-H-208), and `Symbols` map to the 0.2 option catalog. `Options.Extensions` names the engine's standard extensions (`StandardExtensions`, for example `carve.details`, `carve.mathBlock`, `carve.glossary`, `carve.tabs` and the `carve.fencedRender.*` diagram presets; provisional), and `Options.Renderers` maps one to `"standard"` for its standard renderer. Host extensions take host code, which the WASI JSON boundary has no form for (C2-T-010).
 
-The package also provides `ToMarkdown`, `ToPlainText`, `ToANSI`, and `ToCarve`.
-`Render` selects a target dynamically, while `ToHTMLOptions` configures HTML
-extensions, static output, safe mode, profiles, and symbols.
+`RenderWithDiagnostics`, `Parse`, `RenderTree`, `Lint`, `RenderWithIncludes`, `WriteTree`, `Format`, and `ImportDocument` use the public 0.2 JSON calls. `EncodeTree`, `DecodeTree`, `ValidateTree`, and `IncludeDependencies` expose the other tree calls. A caller can use `Call` for another public tooling call without waiting for a typed helper. Tree JSON uses the 0.2 AST schema and diagnostic ranges use UTF-8 byte offsets. Include roots and source paths must be absolute; the WASI guest sees only the mounted root. `WriteTree` accepts `WriteOptions` for format settings. `Write` is a source convenience helper: its HTML target applies render options, while other targets refuse options their writer calls cannot read.
 
-```go
-html, err := carve.ToHTMLOptions(source, carve.Options{
-	Safe:       true,
-	Profile:    "comment",
-	Extensions: []string{"spoiler", "details"},
-})
-```
+The writer registry contains HTML, the canonical Carve writer (`ToCarve`, `Format`), and the Markdown, plain-text and ANSI writers (`ToMarkdown`, `ToPlainText`, `ToANSI`). `FromHTML` imports HTML and returns the `importDocument` record (`tree`, `source`, `diagnostics`). `ImportDocument` also reads `gfm`, `markdown` (CommonMark only) and `djot`, and `FromMarkdown` imports GitHub Flavored Markdown, as the 0.1 importer did. These importers are outside the 0.2 specification (C2-T-003).
 
-`ToCarveOptions(source, carve.Options{AlignTables: true})` formats with table
-columns padded to a shared width, as `carve fmt --align-tables` does.
-
-## Migration and AST access
-
-`FromHTML` and `FromMarkdown` return canonical Carve with a structured fidelity
-report. `ParseAST` exposes the shared serialized AST, and static rendering
-produces self-contained HTML without interactive diagram or math dependencies.
-`DecisionTrace` returns the engine's block decision trace, which shows why
-each line landed in the block it did.
-
-The [API reference](docs/reference.md#usage) documents the main functions,
-options, output targets, AST access, and migration-report rules.
-
-## Untrusted input
-
-Use a caller-supplied context to bound execution, `Safe: true` to escape raw
-HTML, and a restrictive profile to cap document size and filter constructs.
-Profiles reject the render when an input exceeds its length cap.
-
-Symbol values are trusted configuration. Do not populate them from user input.
-See the [resource and content safety reference](docs/reference.md#resource-limits-and-untrusted-input)
-for the complete boundary.
-
-## Includes
-
-`RenderWithIncludes` and its context variant expand includes under a configured
-root, track dependencies, and refuse traversal outside that root. String-only
-render functions leave include directives literal. Treat inclusion as a
-feature for document trees you control, not for untrusted input.
-`SelectIncludeRegion` finds the lines of an `@region:name` in a file.
-
-See [File inclusion](docs/reference.md#file-inclusion) for containment,
-budgets, dependency identities, warnings, and symlink handling.
+`RenderWithIncludes` and `Lint` with an `Include` mount the root read-only into the guest and expand includes there; a 0.2 diagnostic from an included file carries `File` and a byte `Range` but no include chain. Combining includes with `Options.Extensions` does not expand yet (carve-rs#4352).
 
 ## Engine provenance
 
-The module pins a specific carve-rs WASM artifact in `internal/wasm/REV` and
-records its digest beside the embedded bytes. CI verifies both values.
+The embedded bytes are in `internal/wasm/carve.wasm`. `REV` pins the exact carve-rs commit, and `carve.wasm.sha256` records the artifact hash. To rebuild, check out that commit in a clean carve-rs clone and run `CARVE_RS=/path/to/carve-rs ./build-wasm.sh`. The source checkout needs the WASI target and Rust toolchain. Go users need neither Rust nor a WASI runtime outside wazero.
 
 ## Development
 
-Contributor setup, engine refreshes, tests, and release checks are in the
-[development guide](docs/development.md).
+Engine rebuilds, tests and release checks are in the [development guide](docs/development.md).
